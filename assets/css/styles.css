@@ -95,10 +95,28 @@ main,
   color: var(--muted);
   text-decoration: none;
   font-size: 0.92rem;
+  position: relative;
+  transition: color 0.2s ease;
 }
 
 .topnav a:hover {
   color: var(--text);
+}
+
+.topnav a.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.topnav a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), #58e1ff);
+  border-radius: 2px;
 }
 
 main {

@@ -6,7 +6,7 @@ const leaderboardData = [
   { rank: 5, team: "DexMinds / bimanual-lite", overall: 89.8, success: "87.3%", latency: "188ms" }
 ];
 
-const historyData = {
+const defaultHistoryData = {
   "Pick & Place": [
     {
       date: "2026-03-08 10:24",
@@ -66,6 +66,10 @@ const historyData = {
   ]
 };
 
+const STORAGE_KEY = "arenaHistoryData";
+
+let historyData = loadHistoryData();
+
 const leaderboardBody = document.getElementById("leaderboardBody");
 const testFilter = document.getElementById("testFilter");
 const historyList = document.getElementById("historyList");
@@ -73,6 +77,28 @@ const loginForm = document.getElementById("loginForm");
 const evalForm = document.getElementById("evalForm");
 const loginStatus = document.getElementById("loginStatus");
 const evalStatus = document.getElementById("evalStatus");
+
+function loadHistoryData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return structuredClone(defaultHistoryData);
+    }
+
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed ? parsed : structuredClone(defaultHistoryData);
+  } catch {
+    return structuredClone(defaultHistoryData);
+  }
+}
+
+function saveHistoryData() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(historyData));
+  } catch {
+    // Ignore storage errors and keep in-memory data.
+  }
+}
 
 function renderLeaderboard() {
   leaderboardBody.innerHTML = leaderboardData
@@ -141,37 +167,53 @@ function addEvaluationRecord(testName, modelName, version) {
     score,
     result
   });
+
+  saveHistoryData();
 }
 
-loginForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(loginForm);
-  const username = formData.get("username");
-  loginStatus.textContent = `已登录: ${username}`;
-  loginStatus.style.color = "#7dffd9";
-  loginForm.reset();
-});
+if (loginForm && loginStatus) {
+  loginForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(loginForm);
+    const username = formData.get("username");
+    loginStatus.textContent = `已登录: ${username}`;
+    loginStatus.style.color = "#7dffd9";
+    loginForm.reset();
+  });
+}
 
-evalForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(evalForm);
-  const modelName = formData.get("modelName");
-  const testName = formData.get("testName");
-  const version = formData.get("version");
+if (evalForm && evalStatus) {
+  evalForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(evalForm);
+    const modelName = formData.get("modelName");
+    const testName = formData.get("testName");
+    const version = formData.get("version");
 
-  addEvaluationRecord(testName, modelName, version);
-  renderHistory(testName);
-  testFilter.value = testName;
+    addEvaluationRecord(testName, modelName, version);
 
-  evalStatus.textContent = `提交成功: ${modelName} (${version}) -> ${testName}`;
-  evalStatus.style.color = "#7dffd9";
-  evalForm.reset();
-});
+    if (testFilter && historyList) {
+      renderHistory(testName);
+      testFilter.value = testName;
+    }
 
-testFilter.addEventListener("change", (event) => {
-  renderHistory(event.target.value);
-});
+    evalStatus.textContent = `提交成功: ${modelName} (${version}) -> ${testName}`;
+    evalStatus.style.color = "#7dffd9";
+    evalForm.reset();
+  });
+}
 
-renderLeaderboard();
-renderFilterOptions();
-renderHistory(Object.keys(historyData)[0]);
+if (testFilter && historyList) {
+  testFilter.addEventListener("change", (event) => {
+    renderHistory(event.target.value);
+  });
+}
+
+if (leaderboardBody) {
+  renderLeaderboard();
+}
+
+if (testFilter && historyList) {
+  renderFilterOptions();
+  renderHistory(Object.keys(historyData)[0]);
+}

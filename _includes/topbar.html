@@ -1,0 +1,16 @@
+<header class="topbar">
+  <div class="brand">
+    <a href="/index.html" aria-label="Go to home">
+      <img class="brand-logo" src="/assets/images/logo.svg" alt="ArenaEval 机器人竞赛 Logo" />
+    </a>
+    <span class="brand-text">ArenaEval</span>
+  </div>
+  <nav class="topnav">
+    <a href="/index.html" {% if page.url == '/index.html' or page.url == '/' %}class="active"{% endif %}>Home</a>
+    <a href="/login.html" {% if page.url == '/login.html' %}class="active"{% endif %}>登录</a>
+    <a href="/evaluation.html" {% if page.url == '/evaluation.html' %}class="active"{% endif %}>评测入口</a>
+    <a href="/leaderboard.html" {% if page.url == '/leaderboard.html' %}class="active"{% endif %}>Leaderboard</a>
+    <a href="/history.html" {% if page.url == '/history.html' %}class="active"{% endif %}>历史结果</a>
+  </nav>
+  <a class="ghost-btn" href="/evaluation.html">Join Challenge</a>
+</header>
