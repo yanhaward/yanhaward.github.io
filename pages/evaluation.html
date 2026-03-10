@@ -1,0 +1,52 @@
+---
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title data-i18n="title.evaluation">评测入口 - ArenaEval</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/css/main.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    {% include topbar.html %}
+
+    <main>
+      <section class="panel">
+        <h2 data-i18n="evaluation.heading">评测入口</h2>
+        <p class="section-copy" data-i18n="evaluation.desc">提交模型、选择测试集并触发评测。</p>
+        <form class="card form-card" id="evalForm">
+          <label>
+            <span data-i18n="evaluation.modelLabel">模型名称</span>
+            <input type="text" name="modelName" data-i18n-placeholder="evaluation.modelPlaceholder" placeholder="例如：DexPilot-v2" required />
+          </label>
+          <label>
+            <span data-i18n="evaluation.testLabel">测试项目</span>
+            <select name="testName" required>
+              <option value="Pick & Place" data-i18n="tests.pickPlace">Pick & Place</option>
+              <option value="Long Horizon" data-i18n="tests.longHorizon">Long Horizon</option>
+              <option value="Tool Use" data-i18n="tests.toolUse">Tool Use</option>
+              <option value="Navigation" data-i18n="tests.navigation">Navigation</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="evaluation.versionLabel">提交版本</span>
+            <input type="text" name="version" data-i18n-placeholder="evaluation.versionPlaceholder" placeholder="例如：v1.3.5" required />
+          </label>
+          <button type="submit" class="primary-btn full" data-i18n="evaluation.submit">提交评测</button>
+        </form>
+        <p id="evalStatus" class="status" data-i18n="evaluation.statusIdle">暂无新提交</p>
+      </section>
+    </main>
+
+    {% include footer.html %}
+    <script src="/assets/js/app.js"></script>
+  </body>
+</html>

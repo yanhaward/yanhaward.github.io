@@ -5,14 +5,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arena Challenge Portal</title>
+    <title data-i18n="title.home">Arena Challenge Portal</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/assets/css/styles.css" />
+    <link rel="stylesheet" href="/assets/css/main.css" />
   </head>
   <body>
     <div class="bg-grid" aria-hidden="true"></div>
@@ -20,35 +20,34 @@
 
     <main>
       <section class="hero">
-        <p class="tag">REAL-WORLD POLICY EVALUATION</p>
-        <h1>ArenaEval 机器人竞赛平台</h1>
-        <p class="hero-copy">功能已拆分到独立页面，便于维护和后续扩展。</p>
+        <p class="tag" data-i18n="home.heroTag">REAL-WORLD POLICY EVALUATION</p>
+        <h1 data-i18n="home.heroTitle">ArenaEval 机器人竞赛平台</h1>
         <div class="hero-actions">
-          <a class="primary-btn" href="/evaluation.html">进入评测</a>
-          <a class="secondary-btn" href="/leaderboard.html">查看排行榜</a>
+          <a class="primary-btn" data-i18n="home.ctaEval" href="/pages/evaluation.html">进入评测</a>
+          <a class="secondary-btn" data-i18n="home.ctaLeaderboard" href="/pages/leaderboard.html">查看排行榜</a>
         </div>
       </section>
 
       <section class="panel two-col">
         <article class="card">
-          <h2>登录页面</h2>
-          <p class="section-copy">用户登录入口，独立路由。</p>
-          <p><a class="secondary-btn" href="/login.html">打开 login.html</a></p>
+          <h2 data-i18n="home.cardLoginTitle">登录页面</h2>
+          <p class="section-copy" data-i18n="home.cardLoginDesc">用户登录入口，独立路由。</p>
+          <p><a class="secondary-btn" data-i18n="home.cardLoginAction" href="/pages/login.html">打开 login.html</a></p>
         </article>
         <article class="card">
-          <h2>评测页面</h2>
-          <p class="section-copy">模型提交与评测触发，独立路由。</p>
-          <p><a class="secondary-btn" href="/evaluation.html">打开 evaluation.html</a></p>
+          <h2 data-i18n="home.cardEvalTitle">评测页面</h2>
+          <p class="section-copy" data-i18n="home.cardEvalDesc">模型提交与评测触发，独立路由。</p>
+          <p><a class="secondary-btn" data-i18n="home.cardEvalAction" href="/pages/evaluation.html">打开 evaluation.html</a></p>
         </article>
         <article class="card">
-          <h2>排行榜页面</h2>
-          <p class="section-copy">Leaderboard 数据展示，独立路由。</p>
-          <p><a class="secondary-btn" href="/leaderboard.html">打开 leaderboard.html</a></p>
+          <h2 data-i18n="home.cardLeaderboardTitle">排行榜页面</h2>
+          <p class="section-copy" data-i18n="home.cardLeaderboardDesc">Leaderboard 数据展示，独立路由。</p>
+          <p><a class="secondary-btn" data-i18n="home.cardLeaderboardAction" href="/pages/leaderboard.html">打开 leaderboard.html</a></p>
         </article>
         <article class="card">
-          <h2>历史结果页面</h2>
-          <p class="section-copy">单项测试历史结果查询，独立路由。</p>
-          <p><a class="secondary-btn" href="/history.html">打开 history.html</a></p>
+          <h2 data-i18n="home.cardHistoryTitle">历史结果页面</h2>
+          <p class="section-copy" data-i18n="home.cardHistoryDesc">单项测试历史结果查询，独立路由。</p>
+          <p><a class="secondary-btn" data-i18n="home.cardHistoryAction" href="/pages/history.html">打开 history.html</a></p>
         </article>
       </section>
     </main>

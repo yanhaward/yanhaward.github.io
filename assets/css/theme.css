@@ -1,0 +1,48 @@
+:root {
+  --bg: #faf3e0;
+  --panel: rgba(250, 243, 224, 0.92);
+  --card: #f5ede0;
+  --line: #c4a882;
+  --text: #2d1810;
+  --muted: #6b4e35;
+  --accent: #d97757;
+  --accent-2: #e8a94e;
+  --danger: #c74545;
+  --ink: #3d2817;
+  --gold: #d4af37;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--text);
+  background-image: linear-gradient(rgba(250, 243, 224, 0.72), rgba(250, 243, 224, 0.72)),
+    url("/assets/images/background.png");  /* 背景图片路径 */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+h1,
+h2 {
+  font-family: "Chakra Petch", sans-serif;
+}
+
+h1 {
+  margin: 0.5rem 0;
+  line-height: 1.15;
+  font-size: clamp(1.7rem, 3.4vw, 2.6rem);
+}
+
+h2 {
+  margin: 0.1rem 0 0.4rem;
+  font-size: 1.5rem;
+}
