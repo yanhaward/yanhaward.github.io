@@ -30,7 +30,7 @@ permalink: /evaluation/
             <input type="text" name="modelName" data-i18n-placeholder="evaluation.modelPlaceholder" placeholder="例如：DexPilot-v2" required />
           </label>
           <label>
-            <span data-i18n="evaluation.testLabel">测试项目</span>
+            <span data-i18n="evaluation.testLabel">选择任务</span>
             <select name="testName" required>
               <option value="Pick & Place" data-i18n="tests.pickPlace">Pick & Place</option>
               <option value="Long Horizon" data-i18n="tests.longHorizon">Long Horizon</option>
@@ -38,10 +38,7 @@ permalink: /evaluation/
               <option value="Navigation" data-i18n="tests.navigation">Navigation</option>
             </select>
           </label>
-          <label>
-            <span data-i18n="evaluation.versionLabel">提交版本</span>
-            <input type="text" name="version" data-i18n-placeholder="evaluation.versionPlaceholder" placeholder="例如：v1.3.5" required />
-          </label>
+
           <button type="submit" class="primary-btn full" data-i18n="evaluation.submit">提交评测</button>
         </form>
         <p id="evalStatus" class="status" data-i18n="evaluation.statusIdle">暂无新提交</p>

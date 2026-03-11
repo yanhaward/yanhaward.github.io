@@ -1,0 +1,133 @@
+---
+permalink: /eval_monitor/
+---
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <title data-i18n="title.evalMonitor">Evaluation Monitor - ArenaEval</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/main.css" />
+</head>
+<body>
+  <div class="bg-grid" aria-hidden="true"></div>
+  {% include topbar.html %}
+
+  <div class="evalmonitor-page">
+
+    <!-- ── LEFT: connection + eval ── -->
+    <aside class="evalmonitor-left">
+
+      <!-- server connection -->
+      <div class="evalmonitor-conn-row">
+        <input type="text" id="evalmonitorServerUrl" value="ws://localhost:9000" />
+        <button type="button" class="secondary-btn" id="evalmonitorConnectBtn" onclick="toggleEvalMonitorConnection()">连接</button>
+      </div>
+      <div class="evalmonitor-ws-badge disconnected" id="evalmonitorWsStatus">
+        <span class="evalmonitor-ws-badge-dot"></span>
+        <span id="evalmonitorWsStatusText">未连接</span>
+      </div>
+      <div class="evalmonitor-stats">
+        <span>帧率:&nbsp;<strong id="evalmonitorFps">0</strong> FPS</span>
+        <span>接收帧数:&nbsp;<strong id="evalmonitorFrameCount">0</strong></span>
+        <span>延迟:&nbsp;<strong id="evalmonitorLatency">-</strong> ms</span>
+      </div>
+
+      <hr class="evalmonitor-divider" />
+
+      <!-- eval control -->
+      <div class="evalmonitor-eval-ctrl">
+        <p id="evalmonitorPendingInfo" class="section-copy" data-i18n="evalMonitor.idleNoTask">当前没有待评测任务。</p>
+        <button id="evalmonitorStartBtn" type="button" class="primary-btn full" data-i18n="evalMonitor.start">开始</button>
+        <p id="evalmonitorStatus" class="status" data-i18n="evalMonitor.statusIdle">等待开始评测</p>
+        <a id="evalmonitorHistoryLink" href="/history" class="secondary-btn" hidden data-i18n="evalMonitor.gotoHistory">查看历史结果</a>
+      </div>
+
+    </aside>
+
+    <div
+      class="evalmonitor-resizer evalmonitor-resizer-left"
+      id="evalmonitorLeftResizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize left panel"
+      tabindex="0"
+    ></div>
+
+    <!-- ── CENTER: joint charts ── -->
+    <div class="evalmonitor-center">
+      <div class="evalmonitor-center-header">关节参数</div>
+      <div class="evalmonitor-charts-container">
+        <div class="evalmonitor-chart-section">
+          <div class="evalmonitor-chart-label">Left Arm Joints</div>
+          <div class="evalmonitor-chart-wrap">
+            <canvas id="evalmonitorLeftJointsCanvas" class="evalmonitor-chart-canvas" height="140"></canvas>
+          </div>
+          <div class="evalmonitor-chart-label">Right Arm Joints</div>
+          <div class="evalmonitor-chart-wrap">
+            <canvas id="evalmonitorRightJointsCanvas" class="evalmonitor-chart-canvas" height="140"></canvas>
+          </div>
+          <div class="evalmonitor-chart-label">Left Gripper</div>
+          <div class="evalmonitor-chart-wrap">
+            <canvas id="evalmonitorLeftGripperCanvas" class="evalmonitor-chart-canvas" height="70"></canvas>
+          </div>
+          <div class="evalmonitor-chart-label">Right Gripper</div>
+          <div class="evalmonitor-chart-wrap">
+            <canvas id="evalmonitorRightGripperCanvas" class="evalmonitor-chart-canvas" height="70"></canvas>
+            <div id="evalmonitorChartTooltip" class="evalmonitor-chart-tooltip"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="evalmonitor-resizer evalmonitor-resizer-right"
+      id="evalmonitorRightResizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize right panel"
+      tabindex="0"
+    ></div>
+
+    <!-- ── RIGHT: cameras ── -->
+    <div class="evalmonitor-right">
+      <div class="evalmonitor-cam-item" onclick="expandEvalMonitorCamera('left')">
+        <div class="evalmonitor-cam-label">left camera</div>
+        <div class="evalmonitor-cam-wrap">
+          <img id="evalmonitorLeftCamera" alt="left camera" />
+          <div class="evalmonitor-cam-ns" id="evalmonitorLeftNoSignal">等待图像...</div>
+        </div>
+      </div>
+      <div class="evalmonitor-cam-item" onclick="expandEvalMonitorCamera('head')">
+        <div class="evalmonitor-cam-label">head camera</div>
+        <div class="evalmonitor-cam-wrap">
+          <img id="evalmonitorHeadCamera" alt="head camera" />
+          <div class="evalmonitor-cam-ns" id="evalmonitorHeadNoSignal">等待图像...</div>
+        </div>
+      </div>
+      <div class="evalmonitor-cam-item" onclick="expandEvalMonitorCamera('right')">
+        <div class="evalmonitor-cam-label">right camera</div>
+        <div class="evalmonitor-cam-wrap">
+          <img id="evalmonitorRightCamera" alt="right camera" />
+          <div class="evalmonitor-cam-ns" id="evalmonitorRightNoSignal">等待图像...</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.evalmonitor-page -->
+
+  <!-- camera expand modal -->
+  <div id="evalmonitorCamModal" class="evalmonitor-modal" onclick="onEvalMonitorModalBgClick(event)">
+    <img id="evalmonitorModalImg" alt="camera fullscreen" />
+    <button class="evalmonitor-modal-close" onclick="closeEvalMonitorCamera()" title="关闭">✕</button>
+  </div>
+
+  {% include footer.html %}
+  <script src="/assets/js/app.js"></script>
+  <script src="/assets/js/eval_monitor.js"></script>
+</body>
+</html>
+

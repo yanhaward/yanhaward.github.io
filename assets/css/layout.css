@@ -6,7 +6,11 @@ main,
 
 main {
   width: min(1100px, calc(100% - 2rem));
-  margin: 1.2rem auto 2rem;
+  /* margin: 1.2rem auto 2rem; */
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  margin-left: auto;
+  margin-right: auto;
   display: grid;
   gap: 1.25rem;
   flex: 1 0 auto;

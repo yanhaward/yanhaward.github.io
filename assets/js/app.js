@@ -16,14 +16,12 @@ const defaultHistoryData = {
     {
       date: "2026-03-08 10:24",
       model: "DexPilot-v2",
-      version: "v1.3.2",
       score: 90.1,
       result: "PASS"
     },
     {
       date: "2026-03-09 14:02",
       model: "DexPilot-v2",
-      version: "v1.3.5",
       score: 92.4,
       result: "PASS"
     }
@@ -32,14 +30,12 @@ const defaultHistoryData = {
     {
       date: "2026-03-06 16:45",
       model: "HorizonOne",
-      version: "v0.9.8",
       score: 84.9,
       result: "PASS"
     },
     {
       date: "2026-03-09 09:12",
       model: "HorizonOne",
-      version: "v1.0.0",
       score: 87.2,
       result: "PASS"
     }
@@ -48,14 +44,12 @@ const defaultHistoryData = {
     {
       date: "2026-03-07 11:11",
       model: "ToolSmith",
-      version: "v2.1.0",
       score: 79.3,
       result: "FAIL"
     },
     {
       date: "2026-03-09 18:26",
       model: "ToolSmith",
-      version: "v2.1.3",
       score: 85.1,
       result: "PASS"
     }
@@ -64,7 +58,6 @@ const defaultHistoryData = {
     {
       date: "2026-03-05 08:30",
       model: "NavCore",
-      version: "v3.0.2",
       score: 88.8,
       result: "PASS"
     }
@@ -73,6 +66,7 @@ const defaultHistoryData = {
 
 const STORAGE_KEY = "arenaHistoryData";
 const LANGUAGE_STORAGE_KEY = "arenaUiLanguage";
+const PENDING_EVAL_KEY = "arenaPendingEvaluation";
 
 const translations = {
   zh: {
@@ -80,10 +74,13 @@ const translations = {
     "title.leaderboard": "排行榜 - ArenaEval",
     "title.history": "历史评测结果 - ArenaEval",
     "title.evaluation": "评测入口 - ArenaEval",
+    "title.replayViewer": "回放查看器 - ArenaEval",
     "title.login": "登录 - ArenaEval",
+    "title.tasks": "任务 - ArenaEval",
     "topbar.home": "首页",
     "topbar.leaderboard": "排行榜",
     "topbar.history": "历史结果",
+    "topbar.tasks": "任务",
     "topbar.join": "加入挑战",
     "topbar.login": "登录",
     "topbar.homeAria": "返回首页",
@@ -94,7 +91,7 @@ const translations = {
     "home.ctaLeaderboard": "查看排行榜",
     "home.cardLoginTitle": "登录页面",
     "home.cardLoginDesc": "用户登录入口，独立路由。",
-    "home.cardLoginAction": "打开 login.html",
+    "home.cardLoginAction": "登录",
     "home.cardEvalTitle": "评测页面",
     "home.cardEvalDesc": "模型提交与评测触发，独立路由。",
     "home.cardEvalAction": "打开 evaluation.html",
@@ -125,11 +122,27 @@ const translations = {
     "evaluation.modelLabel": "模型名称",
     "evaluation.modelPlaceholder": "例如：DexPilot-v2",
     "evaluation.testLabel": "测试项目",
-    "evaluation.versionLabel": "提交版本",
-    "evaluation.versionPlaceholder": "例如：v1.3.5",
     "evaluation.submit": "提交评测",
     "evaluation.statusIdle": "暂无新提交",
-    "evaluation.statusSubmitted": "提交成功: {model} ({version}) -> {test}",
+    "evaluation.statusSubmitted": "提交成功: {model} -> {test}",
+    "evalMonitor.heading": "评测监视",
+    "evalMonitor.desc": "实时监控机器人关节数据和摄像头画面，评测过程可视化。",
+    "evalMonitor.start": "开始",
+    "evalMonitor.idleNoTask": "当前没有待评测任务。",
+    "evalMonitor.statusIdle": "等待开始评测",
+    "evalMonitor.pending": "待评测: {model} -> {test}",
+    "evalMonitor.statusRunning": "评测进行中...",
+    "evalMonitor.statusDone": "评测完成，结果已写入历史。",
+    "evalMonitor.gotoHistory": "查看历史结果",
+    "title.evalMonitor": "评测监视 - ArenaEval",
+    "replayViewer.desc": "提交后先进入回放查看器页面，点击开始后才执行评测并写入历史记录。",
+    "replayViewer.start": "开始",
+    "replayViewer.idleNoTask": "当前没有待评测任务。",
+    "replayViewer.statusIdle": "等待开始评测",
+    "replayViewer.pending": "待评测: {model} -> {test}",
+    "replayViewer.statusRunning": "评测进行中...",
+    "replayViewer.statusDone": "评测完成，结果已写入历史。",
+    "replayViewer.gotoHistory": "查看历史结果",
     "login.heading": "用户登录入口",
     "login.desc": "支持用户名 + 密码登录入口，你也可以扩展到 OAuth 或企业 SSO。",
     "login.usernameLabel": "用户名",
@@ -143,6 +156,13 @@ const translations = {
     "tests.longHorizon": "长时程任务",
     "tests.toolUse": "工具使用",
     "tests.navigation": "导航",
+    "tasks.heading": "All Tasks",
+    "tasks.searchLabel": "按任务名或标签搜索",
+    "tasks.searchPlaceholder": "按任务名或标签搜索",
+    "tasks.submit": "Submit",
+    "tasks.trainingData": "Training Data",
+    "tasks.details": "Details",
+    "tasks.empty": "没有匹配到任务，请尝试其他关键词。",
     "footer.title": "ArenaEval Demo",
     "footer.contactLabel": "联系方式",
     "footer.githubLabel": "GitHub 仓库",
@@ -153,10 +173,13 @@ const translations = {
     "title.leaderboard": "Leaderboard - ArenaEval",
     "title.history": "History Results - ArenaEval",
     "title.evaluation": "Evaluation Entry - ArenaEval",
+    "title.replayViewer": "Replay Viewer - ArenaEval",
     "title.login": "Login - ArenaEval",
+    "title.tasks": "Tasks - ArenaEval",
     "topbar.home": "Home",
     "topbar.leaderboard": "Leaderboard",
     "topbar.history": "History",
+    "topbar.tasks": "Tasks",
     "topbar.join": "Join Challenge",
     "topbar.login": "Log in",
     "topbar.homeAria": "Go to home",
@@ -167,7 +190,7 @@ const translations = {
     "home.ctaLeaderboard": "View Leaderboard",
     "home.cardLoginTitle": "Login Page",
     "home.cardLoginDesc": "User login entry with an independent route.",
-    "home.cardLoginAction": "Open login.html",
+    "home.cardLoginAction": "Log in",
     "home.cardEvalTitle": "Evaluation Page",
     "home.cardEvalDesc": "Submit models and trigger evaluations on a dedicated route.",
     "home.cardEvalAction": "Open evaluation.html",
@@ -197,12 +220,28 @@ const translations = {
     "evaluation.desc": "Submit your model, choose a test set, and trigger evaluation.",
     "evaluation.modelLabel": "Model Name",
     "evaluation.modelPlaceholder": "e.g. DexPilot-v2",
-    "evaluation.testLabel": "Test",
-    "evaluation.versionLabel": "Version",
-    "evaluation.versionPlaceholder": "e.g. v1.3.5",
+    "evaluation.testLabel": "Test", //TODO
     "evaluation.submit": "Submit Evaluation",
     "evaluation.statusIdle": "No new submission",
-    "evaluation.statusSubmitted": "Submitted: {model} ({version}) -> {test}",
+    "evaluation.statusSubmitted": "Submitted: {model} -> {test}",
+    "evalMonitor.heading": "Evaluation Monitor",
+    "evalMonitor.desc": "Real-time monitoring of robot joint data and camera feeds with process visualization.",
+    "evalMonitor.start": "Start",
+    "evalMonitor.idleNoTask": "No pending evaluation task.",
+    "evalMonitor.statusIdle": "Waiting to start",
+    "evalMonitor.pending": "Pending: {model} -> {test}",
+    "evalMonitor.statusRunning": "Evaluation is running...",
+    "evalMonitor.statusDone": "Evaluation complete. Result has been written to history.",
+    "evalMonitor.gotoHistory": "View history",
+    "title.evalMonitor": "Evaluation Monitor - ArenaEval",
+    "replayViewer.desc": "After submission, open the replay viewer and start evaluation before writing results to history.",
+    "replayViewer.start": "Start",
+    "replayViewer.idleNoTask": "No pending evaluation task.",
+    "replayViewer.statusIdle": "Waiting to start",
+    "replayViewer.pending": "Pending: {model} -> {test}",
+    "replayViewer.statusRunning": "Evaluation is running...",
+    "replayViewer.statusDone": "Evaluation complete. Result has been written to history.",
+    "replayViewer.gotoHistory": "View history",
     "login.heading": "User Login",
     "login.desc": "Username/password entry, easy to extend to OAuth or enterprise SSO.",
     "login.usernameLabel": "Username",
@@ -216,6 +255,13 @@ const translations = {
     "tests.longHorizon": "Long Horizon",
     "tests.toolUse": "Tool Use",
     "tests.navigation": "Navigation",
+    "tasks.heading": "All Tasks",
+    "tasks.searchLabel": "Search by task name or tag",
+    "tasks.searchPlaceholder": "Search by task name or tag",
+    "tasks.submit": "Submit",
+    "tasks.trainingData": "Training Data",
+    "tasks.details": "Details",
+    "tasks.empty": "No matching task found. Try another keyword.",
     "footer.title": "ArenaEval Demo",
     "footer.contactLabel": "Contact",
     "footer.githubLabel": "GitHub Repository",
@@ -241,6 +287,14 @@ const loginForm = document.getElementById("loginForm");
 const evalForm = document.getElementById("evalForm");
 const loginStatus = document.getElementById("loginStatus");
 const evalStatus = document.getElementById("evalStatus");
+const replayviewerStartBtn = document.getElementById("replayviewerStartBtn");
+const replayviewerPendingInfo = document.getElementById("replayviewerPendingInfo");
+const replayviewerStatus = document.getElementById("replayviewerStatus");
+const replayviewerHistoryLink = document.getElementById("replayviewerHistoryLink");
+const evalmonitorStartBtn = document.getElementById("evalmonitorStartBtn");
+const evalmonitorPendingInfo = document.getElementById("evalmonitorPendingInfo");
+const evalmonitorStatus = document.getElementById("evalmonitorStatus");
+const evalmonitorHistoryLink = document.getElementById("evalmonitorHistoryLink");
 const langToggleBtn = document.getElementById("langToggleBtn");
 
 function resolveInitialLanguage() {
@@ -367,6 +421,35 @@ function saveHistoryData() {
   }
 }
 
+function savePendingEvaluation(data) {
+  try {
+    localStorage.setItem(PENDING_EVAL_KEY, JSON.stringify(data));
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function loadPendingEvaluation() {
+  try {
+    const raw = localStorage.getItem(PENDING_EVAL_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingEvaluation() {
+  try {
+    localStorage.removeItem(PENDING_EVAL_KEY);
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
 function renderLeaderboard() {
   leaderboardBody.innerHTML = leaderboardData
     .map(
@@ -403,10 +486,10 @@ function renderHistory(testName) {
     .map(
       (item) => `
       <article class="history-item">
-        <p><strong>${item.model}</strong> (${item.version})</p>
+        <p><strong>${item.model}</strong></p>
         <p class="meta">${t("history.meta")}: ${item.date}</p>
         <p>${t("history.score")}: <strong>${item.score}</strong> | ${t("history.result")}: <strong style="color:${
-          item.result === "PASS" ? "#7dffd9" : "#ff9aaa"
+          item.result === "PASS" ? "#089c01" : "#c74545"
         }">${item.result === "PASS" ? t("result.pass") : t("result.fail")}</strong></p>
       </article>
     `
@@ -414,7 +497,7 @@ function renderHistory(testName) {
     .join("");
 }
 
-function addEvaluationRecord(testName, modelName, version) {
+function addEvaluationRecord(testName, modelName) {
   const score = Number((76 + Math.random() * 22).toFixed(1));
   const result = score >= 82 ? "PASS" : "FAIL";
   const now = new Date();
@@ -432,7 +515,6 @@ function addEvaluationRecord(testName, modelName, version) {
   historyData[testName].unshift({
     date,
     model: modelName,
-    version,
     score,
     result
   });
@@ -443,10 +525,10 @@ function addEvaluationRecord(testName, modelName, version) {
 if (loginForm && loginStatus) {
   loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const formData = new FormData(loginForm);
-    const username = formData.get("username");
+    const formData = new FormData(loginForm); // get form data
+    const username = formData.get("username"); // get username
     loginStatus.textContent = tf("login.statusLoggedIn", { username });
-    loginStatus.style.color = "#7dffd9";
+    loginStatus.style.color = "#089c01";
     loginForm.reset();
   });
 }
@@ -454,25 +536,96 @@ if (loginForm && loginStatus) {
 if (evalForm && evalStatus) {
   evalForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const formData = new FormData(evalForm);
-    const modelName = formData.get("modelName");
-    const testName = formData.get("testName");
-    const version = formData.get("version");
+    const formData = new FormData(evalForm); // get form data
+    const modelName = formData.get("modelName"); // get model name
+    const testName = formData.get("testName"); // get test name
 
-    addEvaluationRecord(testName, modelName, version);
-
-    if (testFilter && historyList) {
-      renderHistory(testName);
-      testFilter.value = testName;
-    }
-
-    evalStatus.textContent = tf("evaluation.statusSubmitted", {
-      model: modelName,
-      version,
-      test: t(testNameI18nKeys[testName] || testName)
+    savePendingEvaluation({
+      modelName,
+      testName,
+      createdAt: Date.now()
     });
-    evalStatus.style.color = "#7dffd9";
-    evalForm.reset();
+
+    // jump too evaluation monitor page
+    window.location.href = "/eval_monitor/";
+  });
+}
+
+function initReplayViewer() {
+  if (!replayviewerStartBtn || !replayviewerPendingInfo || !replayviewerStatus) {
+    return;
+  }
+
+  const pendingEval = loadPendingEvaluation();
+  if (!pendingEval) {
+    replayviewerStartBtn.disabled = true;
+    replayviewerPendingInfo.textContent = t("replayViewer.idleNoTask");
+    replayviewerStatus.textContent = t("replayViewer.statusIdle");
+    replayviewerStatus.style.color = "#6b4e35";
+    return;
+  }
+
+  replayviewerPendingInfo.textContent = tf("replayViewer.pending", {
+    model: pendingEval.modelName,
+    test: t(testNameI18nKeys[pendingEval.testName] || pendingEval.testName)
+  });
+  replayviewerStatus.textContent = t("replayViewer.statusIdle");
+
+  replayviewerStartBtn.addEventListener("click", () => {
+    replayviewerStartBtn.disabled = true;
+    replayviewerStatus.textContent = t("replayViewer.statusRunning");
+    replayviewerStatus.style.color = "#d97757";
+
+    // Simulate evaluation runtime, then persist result.
+    window.setTimeout(() => {
+      addEvaluationRecord(pendingEval.testName, pendingEval.modelName);
+      clearPendingEvaluation();
+      replayviewerStatus.textContent = t("replayViewer.statusDone");
+      replayviewerStatus.style.color = "#089c01";
+
+      if (replayviewerHistoryLink) {
+        replayviewerHistoryLink.hidden = false;
+      }
+    }, 1800);
+  });
+}
+
+function initEvalMonitor() {
+  if (!evalmonitorStartBtn || !evalmonitorPendingInfo || !evalmonitorStatus) {
+    return;
+  }
+
+  const pendingEval = loadPendingEvaluation();
+  if (!pendingEval) {
+    evalmonitorStartBtn.disabled = true;
+    evalmonitorPendingInfo.textContent = t("evalMonitor.idleNoTask");
+    evalmonitorStatus.textContent = t("evalMonitor.statusIdle");
+    evalmonitorStatus.style.color = "#6b4e35";
+    return;
+  }
+
+  evalmonitorPendingInfo.textContent = tf("evalMonitor.pending", {
+    model: pendingEval.modelName,
+    test: t(testNameI18nKeys[pendingEval.testName] || pendingEval.testName)
+  });
+  evalmonitorStatus.textContent = t("evalMonitor.statusIdle");
+
+  evalmonitorStartBtn.addEventListener("click", () => {
+    evalmonitorStartBtn.disabled = true;
+    evalmonitorStatus.textContent = t("evalMonitor.statusRunning");
+    evalmonitorStatus.style.color = "#d97757";
+
+    // Simulate evaluation runtime, then persist result.
+    window.setTimeout(() => {
+      addEvaluationRecord(pendingEval.testName, pendingEval.modelName);
+      clearPendingEvaluation();
+      evalmonitorStatus.textContent = t("evalMonitor.statusDone");
+      evalmonitorStatus.style.color = "#089c01";
+
+      if (evalmonitorHistoryLink) {
+        evalmonitorHistoryLink.hidden = false;
+      }
+    }, 1800);
   });
 }
 
@@ -492,3 +645,5 @@ if (testFilter && historyList) {
 }
 
 initTopbarLanguageToggle();
+initReplayViewer();
+initEvalMonitor();

@@ -1,0 +1,145 @@
+---
+permalink: /tasks/
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <title data-i18n="title.tasks">Tasks - ArenaEval</title>
+    <meta charset="UTF-8" />
+    <meta name="description" content="Browse all ArenaEval tasks, search by task name or tag, and access submit/training/details actions." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/assets/css/main.css" />
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+    {% include topbar.html %}
+
+    <main>
+      <section class="panel">
+        <div class="tasks-head">
+          <h2 data-i18n="tasks.heading">All Tasks</h2>
+          <label class="tasks-search" for="taskSearchInput">
+            <span class="sr-only" data-i18n="tasks.searchLabel">Search by task name or tag</span>
+            <input
+              id="taskSearchInput"
+              type="search"
+              data-i18n-placeholder="tasks.searchPlaceholder"
+              placeholder="Search by task name or tag"
+            />
+          </label>
+        </div>
+
+        <div id="taskGrid" class="tasks-grid">
+          <article class="task-card" data-name="Pick & Place" data-tags="grasp manipulation benchmark">
+            <img class="task-thumb" src="/assets/images/logo.png" alt="Pick & Place task" />
+            <h3>Pick & Place</h3>
+            <p class="task-tagline">grasp | manipulation | benchmark</p>
+            <div class="task-actions">
+              <a class="primary-btn" href="/evaluation" data-i18n="tasks.submit">Submit</a>
+              <button class="secondary-btn" type="button" data-i18n="tasks.trainingData">Training Data</button>
+              <button class="secondary-btn" type="button" data-i18n="tasks.details">Details</button>
+            </div>
+          </article>
+
+          <article class="task-card" data-name="Long Horizon" data-tags="planning sequence multi-step">
+            <img class="task-thumb" src="/assets/images/logo.png" alt="Long Horizon task" />
+            <h3>Long Horizon</h3>
+            <p class="task-tagline">planning | sequence | multi-step</p>
+            <div class="task-actions">
+              <a class="primary-btn" href="/evaluation" data-i18n="tasks.submit">Submit</a>
+              <button class="secondary-btn" type="button" data-i18n="tasks.trainingData">Training Data</button>
+              <button class="secondary-btn" type="button" data-i18n="tasks.details">Details</button>
+            </div>
+          </article>
+
+          <article class="task-card" data-name="Tool Use" data-tags="tool reasoning dexterous">
+            <img class="task-thumb" src="/assets/images/logo.png" alt="Tool Use task" />
+            <h3>Tool Use</h3>
+            <p class="task-tagline">tool | reasoning | dexterous</p>
+            <div class="task-actions">
+              <a class="primary-btn" href="/evaluation" data-i18n="tasks.submit">Submit</a>
+              <button class="secondary-btn" type="button" data-i18n="tasks.trainingData">Training Data</button>
+              <button class="secondary-btn" type="button" data-i18n="tasks.details">Details</button>
+            </div>
+          </article>
+
+          <article class="task-card" data-name="Navigation" data-tags="navigation mobility pathfinding">
+            <img class="task-thumb" src="/assets/images/logo.png" alt="Navigation task" />
+            <h3>Navigation</h3>
+            <p class="task-tagline">navigation | mobility | pathfinding</p>
+            <div class="task-actions">
+              <a class="primary-btn" href="/evaluation" data-i18n="tasks.submit">Submit</a>
+              <button class="secondary-btn" type="button" data-i18n="tasks.trainingData">Training Data</button>
+              <button class="secondary-btn" type="button" data-i18n="tasks.details">Details</button>
+            </div>
+          </article>
+
+          <article class="task-card" data-name="Bimanual Coordination" data-tags="bimanual coordination control">
+            <img class="task-thumb" src="/assets/images/logo.png" alt="Bimanual Coordination task" />
+            <h3>Bimanual Coordination</h3>
+            <p class="task-tagline">bimanual | coordination | control</p>
+            <div class="task-actions">
+              <a class="primary-btn" href="/evaluation" data-i18n="tasks.submit">Submit</a>
+              <button class="secondary-btn" type="button" data-i18n="tasks.trainingData">Training Data</button>
+              <button class="secondary-btn" type="button" data-i18n="tasks.details">Details</button>
+            </div>
+          </article>
+
+          <article class="task-card" data-name="Assembly Precision" data-tags="assembly precision contact-rich">
+            <img class="task-thumb" src="/assets/images/logo.png" alt="Assembly Precision task" />
+            <h3>Assembly Precision</h3>
+            <p class="task-tagline">assembly | precision | contact-rich</p>
+            <div class="task-actions">
+              <a class="primary-btn" href="/evaluation" data-i18n="tasks.submit">Submit</a>
+              <button class="secondary-btn" type="button" data-i18n="tasks.trainingData">Training Data</button>
+              <button class="secondary-btn" type="button" data-i18n="tasks.details">Details</button>
+            </div>
+          </article>
+        </div>
+
+        <p id="taskEmptyState" class="tasks-empty" data-i18n="tasks.empty" hidden>No matching task found. Try another keyword.</p>
+      </section>
+    </main>
+
+    {% include footer.html %}
+    <script src="/assets/js/app.js"></script>
+    <script>
+      (function () {
+        const searchInput = document.getElementById("taskSearchInput");
+        const taskCards = Array.from(document.querySelectorAll(".task-card"));
+        const emptyState = document.getElementById("taskEmptyState");
+
+        if (!searchInput || !taskCards.length || !emptyState) {
+          return;
+        }
+
+        function applyFilter() {
+          const keyword = searchInput.value.trim().toLowerCase();
+          let visibleCount = 0;
+
+          taskCards.forEach((card) => {
+            const name = (card.dataset.name || "").toLowerCase();
+            const tags = (card.dataset.tags || "").toLowerCase();
+            const isVisible = !keyword || name.includes(keyword) || tags.includes(keyword);
+
+            card.hidden = !isVisible;
+            if (isVisible) {
+              visibleCount += 1;
+            }
+          });
+
+          emptyState.hidden = visibleCount !== 0;
+        }
+
+        searchInput.addEventListener("input", applyFilter);
+        applyFilter();
+      })();
+    </script>
+  </body>
+</html>

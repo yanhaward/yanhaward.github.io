@@ -16,3 +16,8 @@ import all .css files here
 /* 动画与响应 */
 @import "animation.css";
 @import "responsive.css";
+
+
+/* 特殊的页面样式 */
+@import "replay_viewer.css";
+@import "eval_monitor.css";

@@ -1,6 +1,8 @@
 .topbar {
-  position: relative;
-  z-index: 1;
+  /* Keep topbar pinned to the viewport top while scrolling. */
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
 
 .topbar {
@@ -53,7 +55,7 @@
 }
 
 .topnav a {
-  color: rgba(250, 243, 224, 0.75);
+  color: #faf3e0;
   text-decoration: none;
   font-size: 1.1rem;
   position: relative;
@@ -61,7 +63,7 @@
 }
 
 .topnav a:hover {
-  color: #faf3e0;
+  color: var(--accent-2);
 }
 
 .topnav a.active {

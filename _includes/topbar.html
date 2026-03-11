@@ -8,13 +8,14 @@
     <span class="brand-text">{{profile.name}}</span>
   </div>
   <nav class="topnav">
-    <a href="/index.html" data-i18n="topbar.home" {% if page.url contains '/index.html' or page.url == '/pages/' %}class="active"{% endif %}>Home</a>
-    <a href="/pages/leaderboard.html" data-i18n="topbar.leaderboard" {% if page.url contains '/pages/leaderboard.html' %}class="active"{% endif %}>Leaderboard</a>
-    <a href="/pages/history.html" data-i18n="topbar.history" {% if page.url contains '/pages/history.html' %}class="active"{% endif %}>History</a>
+    <a href="/index.html" data-i18n="topbar.home" {% if page.url contains '/index' or page.url == '/' %}class="active"{% endif %}>Home</a>
+    <a href="/leaderboard" data-i18n="topbar.leaderboard" {% if page.url contains '/leaderboard' %}class="active"{% endif %}>Leaderboard</a>
+    <a href="/tasks" data-i18n="topbar.tasks" {% if page.url contains '/tasks' %}class="active"{% endif %}>Tasks</a>
+    <a href="/history" data-i18n="topbar.history" {% if page.url contains '/history' %}class="active"{% endif %}>History</a>
   </nav>
   <div class="topbar-actions">
-    <a class="ghost-btn" data-i18n="topbar.join" href="/pages/evaluation.html">Join Challenge</a>
-    <a class="ghost-btn" data-i18n="topbar.login" href="/pages/login.html">Log in</a>
+    <a class="ghost-btn" data-i18n="topbar.join" href="/evaluation">Join Challenge</a>
+    <a class="ghost-btn" data-i18n="topbar.login" href="/login">Log in</a>
     <button class="lang-toggle" id="langToggleBtn" type="button" aria-label="Switch language">EN</button>
   </div>
 </header>

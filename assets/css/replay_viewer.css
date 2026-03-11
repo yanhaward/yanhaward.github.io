@@ -1,0 +1,343 @@
+/* === full-viewport dashboard: no panel wrapper === */
+html, body { height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; }
+
+/* hide footer on this page */
+body > footer { display: none; }
+
+.replayviewer-page {
+    --replayviewer-left-width: 300px;
+    --replayviewer-right-width: 260px;
+    --replayviewer-resizer-width: 12px;
+    display: grid;
+    grid-template-columns:
+        minmax(220px, var(--replayviewer-left-width))
+        var(--replayviewer-resizer-width)
+        minmax(360px, 1fr)
+        var(--replayviewer-resizer-width)
+        minmax(220px, var(--replayviewer-right-width));
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── left panel ── */
+.replayviewer-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.7rem;
+    background: rgba(250,243,224,0.72);
+    overflow-y: auto;
+    min-width: 0;
+}
+
+.replayviewer-resizer {
+    position: relative;
+    width: var(--replayviewer-resizer-width);
+    cursor: col-resize;
+    user-select: none;
+    touch-action: none;
+    background: transparent;
+}
+
+.replayviewer-resizer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-50%);
+    background: rgba(196,168,130,0.9);
+    transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.replayviewer-resizer::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 56px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: rgba(217,119,87,0.15);
+    transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.replayviewer-resizer:hover::before,
+.replayviewer-resizer:hover::after,
+.replayviewer-resizer.is-dragging::before,
+.replayviewer-resizer.is-dragging::after,
+.replayviewer-resizer:focus-visible::before,
+.replayviewer-resizer:focus-visible::after {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(217,119,87,0.14);
+}
+
+.replayviewer-resizer:focus-visible {
+    outline: none;
+}
+
+.replayviewer-conn-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.replayviewer-conn-row input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1.5px solid var(--line);
+    border-radius: 6px;
+    background: #fefbf5;
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--text);
+}
+
+.replayviewer-conn-row input[type="text"]:focus {
+    outline: 2px solid var(--accent);
+    border-color: var(--accent);
+}
+
+.replayviewer-ws-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+.replayviewer-ws-badge.disconnected { background: rgba(199,69,69,0.12); color: #c74545; }
+.replayviewer-ws-badge.connected    { background: rgba(8,156,1,0.12);   color: #089c01; }
+.replayviewer-ws-badge-dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    animation: wsPulse 2s infinite;
+}
+.replayviewer-ws-badge.disconnected .replayviewer-ws-badge-dot { background: #c74545; }
+.replayviewer-ws-badge.connected    .replayviewer-ws-badge-dot { background: #089c01; }
+@keyframes wsPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.replayviewer-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.77rem;
+    color: var(--muted);
+}
+.replayviewer-stats strong { color: var(--ink); }
+
+.replayviewer-divider {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 0.1rem 0;
+}
+
+.replayviewer-eval-ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.replayviewer-eval-ctrl .section-copy { font-size: 0.82rem; margin: 0; }
+.replayviewer-eval-ctrl .status        { font-size: 0.79rem; color: var(--muted); }
+
+/* joint charts */
+.replayviewer-chart-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 1;
+    min-height: 0;
+}
+.replayviewer-chart-label {
+    font-size: 0.79rem;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: 0.03em;
+}
+.replayviewer-chart-wrap { position: relative; }
+.replayviewer-chart-canvas {
+    display: block;
+    width: 100%;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.05);
+    cursor: crosshair;
+}
+.replayviewer-chart-tooltip {
+    position: absolute;
+    background: rgba(20,20,20,0.82);
+    color: #fff;
+    font-size: 0.72rem;
+    padding: 2px 7px;
+    border-radius: 4px;
+    pointer-events: none;
+    display: none;
+    white-space: nowrap;
+    z-index: 50;
+}
+
+/* ── center: URDF ── */
+.replayviewer-center {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    min-width: 0;
+}
+.replayviewer-center-header {
+    padding: 0.55rem 1rem;
+    font-weight: 700;
+    font-size: 0.95rem;
+    font-family: 'Chakra Petch', sans-serif;
+    color: var(--ink);
+    border-bottom: 1px solid var(--line);
+    background: rgba(250,243,224,0.85);
+    flex-shrink: 0;
+}
+#replayviewerUrdfContainer {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background: #111;
+}
+#replayviewerUrdfContainer canvas { display: block; width: 100% !important; height: 100% !important; }
+.replayviewer-urdf-ph {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    color: #555;
+    font-size: 0.88rem;
+}
+.replayviewer-urdf-ph svg { width: 56px; height: 56px; opacity: 0.35; }
+
+/* ── right: cameras ── */
+.replayviewer-right {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(250,243,224,0.72);
+    overflow-y: auto;
+    min-width: 0;
+}
+.replayviewer-cam-item {
+    cursor: zoom-in;
+    border-radius: 8px;
+    border: 1.5px solid var(--line);
+    background: var(--card);
+    transition: box-shadow 0.18s;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.replayviewer-cam-item:hover { box-shadow: 0 0 0 2px var(--accent); }
+.replayviewer-cam-label {
+    padding: 0.28rem 0.6rem;
+    font-size: 0.77rem;
+    font-weight: 600;
+    color: var(--ink);
+    font-family: 'Chakra Petch', monospace;
+    border-bottom: 1px solid var(--line);
+    background: rgba(0,0,0,0.04);
+}
+.replayviewer-cam-wrap {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    background: #0d0d0d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.replayviewer-cam-wrap img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: none;
+}
+.replayviewer-cam-ns {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.77rem;
+    color: #666;
+    pointer-events: none;
+}
+
+/* ── camera expand modal ── */
+.replayviewer-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+}
+.replayviewer-modal.open { display: flex; }
+.replayviewer-modal img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 6px;
+}
+.replayviewer-modal-close {
+    position: absolute;
+    top: 1.2rem; right: 1.2rem;
+    background: rgba(255,255,255,0.12);
+    border: none;
+    color: #fff;
+    font-size: 1.3rem;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s;
+}
+.replayviewer-modal-close:hover { background: rgba(255,255,255,0.25); }
+
+body.replayviewer-is-resizing,
+body.replayviewer-is-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+@media (max-width: 900px) {
+    html, body {
+        height: auto;
+        overflow: auto;
+    }
+
+    .replayviewer-page {
+        --replayviewer-left-width: auto;
+        --replayviewer-right-width: auto;
+        grid-template-columns: 1fr;
+        overflow: visible;
+    }
+
+    .replayviewer-resizer {
+        display: none;
+    }
+
+    .replayviewer-left,
+    .replayviewer-center,
+    .replayviewer-right {
+        overflow: visible;
+    }
+}
