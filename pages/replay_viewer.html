@@ -134,24 +134,6 @@ permalink: /replay_viewer/
   </div>
 
   {% include footer.html %}
-  <!-- Three.js and loaders - Multiple CDN sources with fallback -->
-  <script src="https://cdn.jsdelivr.net/npm/three@r128/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@r128/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@r128/examples/js/loaders/ColladaLoader.js"></script>
-  <!-- <script src="https://cdn.bootcdn.net/npm/three@r128/build/three.min.js"></script>
-  <script src="https://cdn.bootcdn.net/npm/three@r128/examples/js/loaders/GLTFLoader.js"></script>
-  <script src="https://cdn.bootcdn.net/npm/three@r128/examples/js/loaders/ColladaLoader.js"></script> -->
-
-  <!-- Fallback if CDN fails -->
-  <script>
-    if (typeof THREE === 'undefined') {
-      console.warn('[Fallback] Three.js CDN failed, attempting backup...');
-      var scriptFallback = document.createElement('script');
-      scriptFallback.src = 'https://unpkg.com/three@r128/build/three.min.js';
-      document.head.appendChild(scriptFallback);
-    }
-  </script>
-  
   <script src="/assets/js/app.js"></script>
   <script src="/assets/js/urdf_viewer.js"></script>
   <script src="/assets/js/replay_viewer.js"></script>

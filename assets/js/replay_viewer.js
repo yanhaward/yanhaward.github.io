@@ -239,18 +239,131 @@
     drawLine(gCtx, gd, GRIPPER_COLOR, gw, gh, gmn - gpad, gmx + gpad, false);
     }
 
-    function pushJointData(joints, gripper) {
-    for (var i = 0; i < 6; i++) {
-        jointBufs[i][bufHead] = (joints && joints[i] !== undefined) ? joints[i] : 0;
+    function flattenNumericValues(value) {
+    if (value === undefined || value === null) return [];
+    if (typeof value === 'number') return isFinite(value) ? [value] : [];
+    if (typeof value === 'string') {
+        var asNum = Number(value);
+        return isFinite(asNum) ? [asNum] : [];
     }
-    gripperBuf[bufHead] = (gripper !== undefined && gripper !== null) ? gripper : 0;
+    if (Array.isArray(value)) {
+        var out = [];
+        for (var i = 0; i < value.length; i++) {
+        out = out.concat(flattenNumericValues(value[i]));
+        }
+        return out;
+    }
+    if (typeof value === 'object') {
+        if (value.data !== undefined) {
+        return flattenNumericValues(value.data);
+        }
+        if (value.value !== undefined) {
+        return flattenNumericValues(value.value);
+        }
+
+        var keys = Object.keys(value);
+        if (!keys.length) return [];
+        var allNumericKeys = keys.every(function (k) { return /^\d+$/.test(k); });
+        if (allNumericKeys) {
+        keys.sort(function (a, b) { return Number(a) - Number(b); });
+        var ordered = [];
+        for (var idx = 0; idx < keys.length; idx++) {
+            ordered = ordered.concat(flattenNumericValues(value[keys[idx]]));
+        }
+        return ordered;
+        }
+
+        var flattened = [];
+        for (var oi = 0; oi < keys.length; oi++) {
+        flattened = flattened.concat(flattenNumericValues(value[keys[oi]]));
+        }
+        return flattened;
+    }
+    if (ArrayBuffer.isView(value)) {
+        return Array.from(value).filter(function (item) {
+        return typeof item === 'number' && isFinite(item);
+        });
+    }
+    return [];
+    }
+
+    function normalizeReplayJointPayload(rawJoints, rawGripper) {
+    var leftArm = [];
+    var rightArm = [];
+
+    if (rawJoints && typeof rawJoints === 'object' && !Array.isArray(rawJoints) && !ArrayBuffer.isView(rawJoints)) {
+        leftArm = flattenNumericValues(
+        rawJoints.left_arm !== undefined ? rawJoints.left_arm :
+        rawJoints.leftArm !== undefined ? rawJoints.leftArm :
+        rawJoints.arm_left
+        );
+        rightArm = flattenNumericValues(
+        rawJoints.right_arm !== undefined ? rawJoints.right_arm :
+        rawJoints.rightArm !== undefined ? rawJoints.rightArm :
+        rawJoints.arm_right
+        );
+    }
+
+    if ((!leftArm.length && !rightArm.length)) {
+        var merged = flattenNumericValues(rawJoints);
+        if (merged.length >= 12) {
+        leftArm = merged.slice(0, 6);
+        rightArm = merged.slice(6, 12);
+        } else if (merged.length > 6) {
+        var half = Math.floor(merged.length / 2);
+        leftArm = merged.slice(0, half);
+        rightArm = merged.slice(half);
+        } else {
+        leftArm = merged.slice(0, 6);
+        }
+    }
+
+    if (!leftArm.length && rightArm.length) {
+        leftArm = rightArm.slice(0, 6);
+    }
+    if (!rightArm.length && leftArm.length) {
+        rightArm = leftArm.slice(0, 6);
+    }
+
+    var gripperValues = flattenNumericValues(rawGripper);
+    var leftGripper = gripperValues.length ? gripperValues[0] : 0;
+    var rightGripper = gripperValues.length > 1 ? gripperValues[1] : leftGripper;
+
+    if (rawJoints && typeof rawJoints === 'object' && !Array.isArray(rawJoints) && !ArrayBuffer.isView(rawJoints)) {
+        var leftGripperValues = flattenNumericValues(
+        rawJoints.left_gripper !== undefined ? rawJoints.left_gripper : rawJoints.leftGripper
+        );
+        var rightGripperValues = flattenNumericValues(
+        rawJoints.right_gripper !== undefined ? rawJoints.right_gripper : rawJoints.rightGripper
+        );
+        if (leftGripperValues.length) leftGripper = leftGripperValues[0];
+        if (rightGripperValues.length) rightGripper = rightGripperValues[0];
+    }
+
+    return {
+        leftArm: leftArm.slice(0, 6),
+        rightArm: rightArm.slice(0, 6),
+        leftGripper: leftGripper,
+        rightGripper: rightGripper,
+        chartArm: leftArm.length ? leftArm.slice(0, 6) : rightArm.slice(0, 6),
+        chartGripper: leftGripper,
+    };
+    }
+
+    function pushJointData(payload) {
+    var chartJoints = payload && payload.chartArm ? payload.chartArm : [];
+    var chartGripper = payload ? payload.chartGripper : 0;
+    for (var i = 0; i < 6; i++) {
+        jointBufs[i][bufHead] = (chartJoints && chartJoints[i] !== undefined) ? chartJoints[i] : 0;
+    }
+    gripperBuf[bufHead] = (chartGripper !== undefined && chartGripper !== null) ? chartGripper : 0;
     bufHead = (bufHead + 1) % BUF_SIZE;
     if (bufFilled < BUF_SIZE) bufFilled++;
     drawCharts();
     
     // Update URDF viewer with current joint values
     if (window.UrdfViewer) {
-        window.UrdfViewer.updateFromReplayData(joints, gripper);
+        window.UrdfViewer.updateFromReplayData(payload);
     }
     }
 
@@ -348,16 +461,42 @@
     try {
         var now = Date.now();
         var msg = typeof data === 'string' ? JSON.parse(data) : JSON.parse(await data.text());
-        if (msg.type === 'obs' && msg.obs) {
-        var obs = typeof msg.obs === 'string' ? JSON.parse(msg.obs) : msg.obs;
+        var obs = null;
+
+        // Support both wrapped websocket messages and direct payloads.
+        if (msg && msg.type === 'obs' && msg.obs) {
+        obs = typeof msg.obs === 'string' ? JSON.parse(msg.obs) : msg.obs;
+        } else if (msg && (msg.observation || msg.joint_action || msg.action)) {
+        obs = msg;
+        }
+
+        if (obs) {
+        var observation = obs.observation || {};
+        var jointAction = obs.joint_action || obs.action || null;
+
+        // Fallback for old payloads that put joint fields directly in observation.
+        if (!jointAction && observation) {
+            if (
+                observation.left_arm !== undefined ||
+                observation.right_arm !== undefined ||
+                observation.joint_positions !== undefined ||
+                observation.joints !== undefined ||
+                observation.qpos !== undefined
+            ) {
+            jointAction = observation;
+            }
+        }
+
         if (obs.observation) {
-            var o = obs.observation;
-            if (o.head_camera)  updateCamImage('head',  o.head_camera);
-            if (o.left_camera)  updateCamImage('left',  o.left_camera);
-            if (o.right_camera) updateCamImage('right', o.right_camera);
-            var joints  = o.joint_positions || o.joints || o.qpos || [];
-            var gripper = o.gripper_pos !== undefined ? o.gripper_pos : o.gripper;
-            pushJointData(joints, gripper);
+            if (observation.head_camera)  updateCamImage('head',  observation.head_camera);
+            if (observation.left_camera)  updateCamImage('left',  observation.left_camera);
+            if (observation.right_camera) updateCamImage('right', observation.right_camera);
+        }
+        if (jointAction) {
+            // Support the exact structure:
+            // { left_arm, left_gripper, right_arm, right_gripper }
+            var gripperPair = [jointAction.left_gripper, jointAction.right_gripper];
+            pushJointData(normalizeReplayJointPayload(jointAction, gripperPair));
         }
         frameCount++; fpsCounter++;
         document.getElementById('replayviewerFrameCount').textContent = frameCount;
@@ -369,7 +508,9 @@
             fpsCounter = 0; lastFpsUpdate = now;
         }
         }
-    } catch (_) {}
+    } catch (error) {
+        console.error('[Replay Viewer] Failed to handle frame:', error);
+    }
     }
 
     function updateCamImage(key, imageData) {

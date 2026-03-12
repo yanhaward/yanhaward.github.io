@@ -1,1029 +1,655 @@
 /**
- * URDF Viewer - Real-time 3D visualization of URDF-based robotic arms
- * Uses Three.js to render the robot model and update joint states
+ * URDF Viewer based on the urdf-loader workflow:
+ * Three.js scene + URDFLoader + custom mesh loaders + setJointValue updates.
  */
 
 (function () {
     'use strict';
 
-    // ========== Configuration ==========
     const CONFIG = {
-        urdfPath: '/y1_dual/y1_dual.urdf',
-        meshPath: '/y1_dual/meshes/',  // Fixed: actual mesh files are in meshes/
+        // URDF path candidates to try loading from
+        urdfPathCandidates: [
+            '/y1_dual/y1_dual.urdf',
+            'y1_dual/y1_dual.urdf',
+            './y1_dual/y1_dual.urdf',
+            '../y1_dual/y1_dual.urdf',
+        ],
         containerSelector: '#replayviewerUrdfContainer',
-        initialCameraSettings: {
-            position: [0.5, 0.4, 0.6],
-            lookAt: [0, 0, 0.3],
-            fov: 50,
-        },
+        cameraPosition: [2.8, 2.2, 2.8],
+        controlsTarget: [0, 0.7, 0],
     };
 
-    // ========== Global State ==========
-    let scene, camera, renderer;
-    let robotGroup, linkMeshes = {}, joints = {}, jointLimits = {};
+    let modulePromise = null;
+    let containerEl = null;
+    let scene = null;
+    let camera = null;
+    let renderer = null;
+    let controls = null;
+    let robot = null;
+    let animationFrameId = null;
+    let resizeObserver = null;
+    let statusPanel = null;
+    let currentUrdfUrl = null;
     let initialized = false;
     let currentJointValues = {};
-    let urdfData = null;
-    let animationFrameId = null;
-    
-    // Mouse control state
-    let mouseControl = {
-        isDragging: false,
-        previousMousePosition: { x: 0, y: 0 },
-        rotation: { x: 0, y: 0 },
-    };
-    
-    // Playback state
+    let pendingJointValues = null;
     let playbackState = {
         isPaused: false,
         recordedFrames: [],
         currentFrameIndex: 0,
     };
-    
-    // UI state
-    let uiPanel = null;
 
-    // ========== Check THREE.js availability ==========
-    function checkThreeJs() {
-        if (typeof THREE === 'undefined') {
-            console.error('[URDF Viewer] Three.js is not loaded');
-            return false;
-        }
-        if (typeof THREE.GLTFLoader === 'undefined') {
-            console.warn('[URDF Viewer] Three.js GLTFLoader is not loaded, attempting lazy load...');
-            // Try to load GLTFLoader if Three.js is available but loaders aren't
-            return true; // Still allow init, we'll try to load loaders dynamically
-        }
-        return true;
+    function getPlaceholder() {
+        return containerEl ? containerEl.querySelector('.replayviewer-urdf-ph') : null;
     }
 
-    function loadThreeJsLibraries() {
-        return new Promise((resolve) => {
-            const threeUrls = [
-                'https://cdn.bootcdn.net/npm/three@r128/build/three.min.js',
-                'https://cdn.jsdelivr.net/npm/three@r128/build/three.min.js',
-                'https://unpkg.com/three@r128/build/three.min.js',
-            ];
-            const gltfUrls = [
-                'https://cdn.bootcdn.net/npm/three@r128/examples/js/loaders/GLTFLoader.js',
-                'https://cdn.jsdelivr.net/npm/three@r128/examples/js/loaders/GLTFLoader.js',
-                'https://unpkg.com/three@r128/examples/js/loaders/GLTFLoader.js',
-            ];
-            const colladaUrls = [
-                'https://cdn.bootcdn.net/npm/three@r128/examples/js/loaders/ColladaLoader.js',
-                'https://cdn.jsdelivr.net/npm/three@r128/examples/js/loaders/ColladaLoader.js',
-                'https://unpkg.com/three@r128/examples/js/loaders/ColladaLoader.js',
-            ];
+    function setPlaceholder(message, isHtml) {
+        const placeholder = getPlaceholder();
+        if (!placeholder) return;
+        if (isHtml) {
+            placeholder.innerHTML = message;
+        } else {
+            placeholder.textContent = message;
+        }
+        placeholder.style.display = '';
+    }
 
-            const loadScriptFromList = (urls, label, done) => {
-                let i = 0;
-                const tryNext = () => {
-                    if (i >= urls.length) {
-                        done(false);
-                        return;
-                    }
-                    const url = urls[i++];
-                    const script = document.createElement('script');
-                    script.src = url;
-                    script.async = true;
-                    script.crossOrigin = 'anonymous';
-                    script.onload = () => {
-                        console.log(`[URDF Viewer] ${label} loaded from: ${url}`);
-                        done(true);
-                    };
-                    script.onerror = () => {
-                        console.warn(`[URDF Viewer] Failed to load ${label} from: ${url}`);
-                        tryNext();
-                    };
-                    document.head.appendChild(script);
+    function hidePlaceholder() {
+        const placeholder = getPlaceholder();
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+    }
+
+    function dedupe(values) {
+        return Array.from(new Set(values.filter(Boolean)));
+    }
+
+    function flattenNumericValues(value) {
+        if (value === undefined || value === null) return [];
+        if (typeof value === 'number') return isFinite(value) ? [value] : [];
+        if (typeof value === 'string') {
+            const asNum = Number(value);
+            return isFinite(asNum) ? [asNum] : [];
+        }
+        if (Array.isArray(value)) {
+            let out = [];
+            for (let index = 0; index < value.length; index++) {
+                out = out.concat(flattenNumericValues(value[index]));
+            }
+            return out;
+        }
+        if (typeof value === 'object') {
+            if (value.data !== undefined) {
+                return flattenNumericValues(value.data);
+            }
+            if (value.value !== undefined) {
+                return flattenNumericValues(value.value);
+            }
+
+            const keys = Object.keys(value);
+            if (!keys.length) return [];
+
+            const allNumericKeys = keys.every(function (key) {
+                return /^\d+$/.test(key);
+            });
+
+            if (allNumericKeys) {
+                keys.sort(function (left, right) {
+                    return Number(left) - Number(right);
+                });
+
+                let ordered = [];
+                for (let idx = 0; idx < keys.length; idx++) {
+                    ordered = ordered.concat(flattenNumericValues(value[keys[idx]]));
+                }
+                return ordered;
+            }
+
+            let flattened = [];
+            for (let idx = 0; idx < keys.length; idx++) {
+                flattened = flattened.concat(flattenNumericValues(value[keys[idx]]));
+            }
+            return flattened;
+        }
+        if (ArrayBuffer.isView(value)) {
+            return Array.from(value).filter(function (item) {
+                return typeof item === 'number' && isFinite(item);
+            });
+        }
+        return [];
+    }
+
+    function normalizeReplayJointPayload(payload, explicitGripper) {
+        if (payload && payload.leftArm) {
+            return {
+                leftArm: flattenNumericValues(payload.leftArm).slice(0, 6),
+                rightArm: flattenNumericValues(payload.rightArm).slice(0, 6),
+                leftGripper: flattenNumericValues(payload.leftGripper)[0],
+                rightGripper: flattenNumericValues(payload.rightGripper)[0],
+            };
+        }
+
+        let leftArm = [];
+        let rightArm = [];
+
+        if (payload && typeof payload === 'object' && !Array.isArray(payload) && !ArrayBuffer.isView(payload)) {
+            leftArm = flattenNumericValues(
+                payload.left_arm !== undefined ? payload.left_arm :
+                payload.leftArm !== undefined ? payload.leftArm :
+                payload.arm_left
+            );
+            rightArm = flattenNumericValues(
+                payload.right_arm !== undefined ? payload.right_arm :
+                payload.rightArm !== undefined ? payload.rightArm :
+                payload.arm_right
+            );
+        }
+
+        if (!leftArm.length && !rightArm.length) {
+            const merged = flattenNumericValues(payload);
+            if (merged.length >= 12) {
+                leftArm = merged.slice(0, 6);
+                rightArm = merged.slice(6, 12);
+            } else if (merged.length > 6) {
+                const half = Math.floor(merged.length / 2);
+                leftArm = merged.slice(0, half);
+                rightArm = merged.slice(half);
+            } else {
+                leftArm = merged.slice(0, 6);
+            }
+        }
+
+        if (!leftArm.length && rightArm.length) {
+            leftArm = rightArm.slice(0, 6);
+        }
+        if (!rightArm.length && leftArm.length) {
+            rightArm = leftArm.slice(0, 6);
+        }
+
+        let leftGripper = 0;
+        let rightGripper = 0;
+        const explicitGripperValues = flattenNumericValues(explicitGripper);
+        if (explicitGripperValues.length) {
+            leftGripper = explicitGripperValues[0];
+            rightGripper = explicitGripperValues.length > 1 ? explicitGripperValues[1] : leftGripper;
+        }
+
+        if (payload && typeof payload === 'object' && !Array.isArray(payload) && !ArrayBuffer.isView(payload)) {
+            const leftGripperValues = flattenNumericValues(
+                payload.left_gripper !== undefined ? payload.left_gripper : payload.leftGripper
+            );
+            const rightGripperValues = flattenNumericValues(
+                payload.right_gripper !== undefined ? payload.right_gripper : payload.rightGripper
+            );
+            if (leftGripperValues.length) leftGripper = leftGripperValues[0];
+            if (rightGripperValues.length) rightGripper = rightGripperValues[0];
+            if (payload.gripper !== undefined && payload.gripper !== null) {
+                const gripperValues = flattenNumericValues(payload.gripper);
+                if (gripperValues.length) {
+                    leftGripper = gripperValues[0];
+                    rightGripper = gripperValues.length > 1 ? gripperValues[1] : leftGripper;
+                }
+            }
+            if (payload.gripper_pos !== undefined && payload.gripper_pos !== null) {
+                const gripperPosValues = flattenNumericValues(payload.gripper_pos);
+                if (gripperPosValues.length) {
+                    leftGripper = gripperPosValues[0];
+                    rightGripper = gripperPosValues.length > 1 ? gripperPosValues[1] : leftGripper;
+                }
+            }
+        }
+
+        return {
+            leftArm: leftArm.slice(0, 6),
+            rightArm: rightArm.slice(0, 6),
+            leftGripper: leftGripper,
+            rightGripper: rightGripper,
+        };
+    }
+
+    async function loadModules() {
+        if (!modulePromise) {
+            modulePromise = Promise.all([
+                import('https://esm.sh/three@0.164.1?target=es2022'),
+                import('https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls?target=es2022'),
+                import('https://esm.sh/three@0.164.1/examples/jsm/loaders/GLTFLoader?target=es2022'),
+                import('https://esm.sh/three@0.164.1/examples/jsm/loaders/ColladaLoader?target=es2022'),
+                import('https://esm.sh/urdf-loader@0.12.6?bundle&deps=three@0.164.1'),
+            ]).then(function (mods) {
+                return {
+                    THREE: mods[0],
+                    OrbitControls: mods[1].OrbitControls,
+                    GLTFLoader: mods[2].GLTFLoader,
+                    ColladaLoader: mods[3].ColladaLoader,
+                    URDFLoader: mods[4].default,
                 };
-                tryNext();
-            };
-
-            const ensureColladaLoader = () => {
-                if (typeof THREE.ColladaLoader !== 'undefined') {
-                    resolve(true);
-                    return;
-                }
-                loadScriptFromList(colladaUrls, 'ColladaLoader', (ok) => {
-                    if (!ok) {
-                        console.warn('[URDF Viewer] ColladaLoader is unavailable; .dae meshes may fail');
-                    }
-                    resolve(true);
-                });
-            };
-
-            const ensureGltfLoader = () => {
-                if (typeof THREE.GLTFLoader !== 'undefined') {
-                    ensureColladaLoader();
-                    return;
-                }
-                loadScriptFromList(gltfUrls, 'GLTFLoader', (ok) => {
-                    if (!ok) {
-                        console.error('[URDF Viewer] Failed to load GLTFLoader from all sources');
-                        resolve(false);
-                        return;
-                    }
-                    ensureColladaLoader();
-                });
-            };
-
-            const ensureThree = () => {
-                if (typeof THREE !== 'undefined') {
-                    ensureGltfLoader();
-                    return;
-                }
-                loadScriptFromList(threeUrls, 'Three.js', (ok) => {
-                    if (!ok) {
-                        console.error('[URDF Viewer] Failed to load Three.js from all sources');
-                        resolve(false);
-                        return;
-                    }
-                    ensureGltfLoader();
-                });
-            };
-
-            ensureThree();
-        });
-    }
-
-    // ========== Initialization ==========
-    function initThreeJs(container) {
-        if (initialized) return;
-        
-        if (!checkThreeJs()) {
-            console.error('[URDF Viewer] Cannot initialize without Three.js');
-            return;
+            });
         }
 
-        console.log('[URDF Viewer] Initializing Three.js...');
+        return modulePromise;
+    }
 
-        // Create scene
+    async function resolveUrdfUrl() {
+        const candidates = dedupe(CONFIG.urdfPathCandidates);
+
+        for (const candidate of candidates) {
+            try {
+                const response = await fetch(candidate, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+
+                if (response.ok) {
+                    return response.url || candidate;
+                }
+
+                console.warn('[URDF Viewer] URDF not found:', candidate, response.status);
+            } catch (error) {
+                console.warn('[URDF Viewer] URDF fetch failed:', candidate, error.message);
+            }
+        }
+
+        throw new Error('URDF file not found in all candidate paths');
+    }
+
+    function createStatusPanel() {
+        statusPanel = document.createElement('div');
+        statusPanel.id = 'urdfViewerPanel';
+        statusPanel.style.cssText = [
+            'position:absolute',
+            'left:10px',
+            'bottom:10px',
+            'z-index:5',
+            'padding:10px 12px',
+            'border-radius:6px',
+            'background:rgba(7, 10, 18, 0.82)',
+            'border:1px solid rgba(255,255,255,0.12)',
+            'color:#d7dbe3',
+            'font:12px/1.5 monospace',
+            'max-width:260px',
+        ].join(';');
+        containerEl.appendChild(statusPanel);
+        updateStatusPanel();
+    }
+
+    function updateStatusPanel() {
+        if (!statusPanel) return;
+
+        const jointNames = [
+            'fl_joint1',
+            'fl_joint2',
+            'fl_joint3',
+            'fl_joint4',
+            'fl_joint5',
+            'fl_joint6',
+        ];
+
+        const rows = jointNames.map(function (name, index) {
+            const value = currentJointValues[name] || 0;
+            return '<div>J' + (index + 1) + ': ' + value.toFixed(3) + '</div>';
+        }).join('');
+
+        const gripperValue = currentJointValues.fl_joint7 || 0;
+        const stateColor = playbackState.isPaused ? '#ff8c69' : '#78d381';
+        const stateLabel = playbackState.isPaused ? 'PAUSED' : 'PLAYING';
+
+        statusPanel.innerHTML = [
+            '<div style="font-weight:bold;margin-bottom:6px;">URDF Robot</div>',
+            '<div style="margin-bottom:6px;">State: <span style="color:' + stateColor + ';">' + stateLabel + '</span></div>',
+            '<div style="color:#97a0b3;margin-bottom:4px;">Left Arm</div>',
+            rows,
+            '<div style="margin-top:6px;">Gripper: ' + gripperValue.toFixed(3) + '</div>',
+            '<div style="margin-top:6px;color:#97a0b3;">Frame: ' + (playbackState.currentFrameIndex + 1) + ' / ' + playbackState.recordedFrames.length + '</div>',
+            '<div style="margin-top:8px;color:#97a0b3;">Drag rotate, wheel zoom</div>',
+        ].join('');
+    }
+
+    async function initThreeScene() {
+        const modules = await loadModules();
+        const THREE = modules.THREE;
+
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
-        scene.fog = new THREE.Fog(0x1a1a1a, 2, 8);
+        scene.background = new THREE.Color(0x10141c);
 
-        // Setup camera
         camera = new THREE.PerspectiveCamera(
-            CONFIG.initialCameraSettings.fov,
-            container.clientWidth / container.clientHeight,
+            45,
+            Math.max(containerEl.clientWidth, 1) / Math.max(containerEl.clientHeight, 1),
             0.01,
-            100
+            200
         );
-        camera.position.set(...CONFIG.initialCameraSettings.position);
-        camera.lookAt(...CONFIG.initialCameraSettings.lookAt);
+        camera.position.set(CONFIG.cameraPosition[0], CONFIG.cameraPosition[1], CONFIG.cameraPosition[2]);
 
-        // Setup renderer
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        renderer.setSize(containerEl.clientWidth, containerEl.clientHeight);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        if ('outputEncoding' in renderer && THREE.sRGBEncoding) {
-            renderer.outputEncoding = THREE.sRGBEncoding;
-        }
-        container.appendChild(renderer.domElement);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        containerEl.appendChild(renderer.domElement);
 
-        console.log('[URDF Viewer] Renderer created:', renderer.getSize());
+        controls = new modules.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.minDistance = 0.5;
+        controls.maxDistance = 20;
+        controls.target.set(CONFIG.controlsTarget[0], CONFIG.controlsTarget[1], CONFIG.controlsTarget[2]);
+        controls.update();
 
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1, 1.5, 1);
+        const hemisphereLight = new THREE.HemisphereLight(0xbfd9ff, 0x0f1118, 1.1);
+        scene.add(hemisphereLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.6);
         directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.camera.near = 0.1;
-        directionalLight.shadow.camera.far = 50;
-        directionalLight.shadow.camera.left = -2;
-        directionalLight.shadow.camera.right = 2;
-        directionalLight.shadow.camera.top = 2;
-        directionalLight.shadow.camera.bottom = -2;
+        directionalLight.position.set(5, 8, 6);
+        directionalLight.shadow.mapSize.setScalar(2048);
         scene.add(directionalLight);
 
-        // Ground plane
-        const groundGeometry = new THREE.PlaneGeometry(2, 2);
-        const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(20, 20),
+            new THREE.ShadowMaterial({ opacity: 0.2 })
+        );
         ground.rotation.x = -Math.PI / 2;
-        ground.position.y = -0.05;
         ground.receiveShadow = true;
         scene.add(ground);
 
-        // Robot group
-        robotGroup = new THREE.Group();
-        robotGroup.castShadow = true;
-        robotGroup.receiveShadow = true;
-        scene.add(robotGroup);
+        createStatusPanel();
 
-        // Setup mouse control
-        setupMouseControl(renderer.domElement);
-
-        // Handle window resize
-        window.addEventListener('resize', onWindowResize);
-
-        // Setup UI panel
-        setupUiPanel(container);
-
-        initialized = true;
-        console.log('[URDF Viewer] Three.js initialization complete');
+        resizeObserver = new ResizeObserver(onResize);
+        resizeObserver.observe(containerEl);
+        window.addEventListener('resize', onResize);
     }
 
-    function onWindowResize() {
-        if (!initialized) return;
-        const container = document.querySelector(CONFIG.containerSelector);
-        if (!container) return;
-        const width = container.clientWidth;
-        const height = container.clientHeight;
+    function onResize() {
+        if (!containerEl || !camera || !renderer) return;
+
+        const width = Math.max(containerEl.clientWidth, 1);
+        const height = Math.max(containerEl.clientHeight, 1);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
     }
 
     function fitCameraToRobot() {
-        if (!robotGroup || !camera) return;
-        const box = new THREE.Box3().setFromObject(robotGroup);
-        if (box.isEmpty()) {
-            console.warn('[URDF Viewer] Robot bounding box is empty; skip camera fit');
-            return;
-        }
+        const modules = window.__ArenaUrdfViewerModules;
+        const THREE = modules.THREE;
+        if (!robot) return;
 
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 0.2);
-        const fov = (camera.fov * Math.PI) / 180;
-        const distance = maxDim / Math.tan(fov / 2) * 1.4;
+        robot.updateMatrixWorld(true);
 
-        camera.position.set(center.x + distance * 0.8, center.y + distance * 0.5, center.z + distance * 0.9);
+        const bounds = new THREE.Box3().setFromObject(robot);
+        if (bounds.isEmpty()) return;
+
+        const size = bounds.getSize(new THREE.Vector3());
+        const center = bounds.getCenter(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z, 0.5);
+        const distance = maxDim * 1.9;
+
+        controls.target.copy(center);
+        camera.position.set(center.x + distance, center.y + distance * 0.7, center.z + distance);
         camera.near = 0.01;
-        camera.far = Math.max(100, distance * 8);
+        camera.far = Math.max(200, distance * 10);
         camera.updateProjectionMatrix();
-        camera.lookAt(center);
-
-        console.log('[URDF Viewer] Camera fitted to robot. Center:', center, 'Size:', size);
+        controls.update();
     }
 
-    // ========== Mouse Control ==========
-    function setupMouseControl(canvas) {
-        canvas.addEventListener('mousedown', onMouseDown);
-        canvas.addEventListener('mousemove', onMouseMove);
-        canvas.addEventListener('mouseup', onMouseUp);
-        canvas.addEventListener('mouseleave', onMouseUp);
-        canvas.addEventListener('dblclick', onDoubleClick);
-    }
+    async function loadRobot() {
+        const modules = await loadModules();
+        window.__ArenaUrdfViewerModules = modules;
 
-    function onMouseDown(e) {
-        mouseControl.isDragging = true;
-        mouseControl.previousMousePosition = { x: e.clientX, y: e.clientY };
-    }
-
-    function onMouseMove(e) {
-        if (!mouseControl.isDragging || !robotGroup) return;
-
-        const deltaX = e.clientX - mouseControl.previousMousePosition.x;
-        const deltaY = e.clientY - mouseControl.previousMousePosition.y;
-
-        mouseControl.rotation.y += deltaX * 0.01;
-        mouseControl.rotation.x += deltaY * 0.01;
-
-        // Clamp X rotation
-        mouseControl.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, mouseControl.rotation.x));
-
-        // Apply rotation to robot group
-        const qx = new THREE.Quaternion();
-        qx.setFromAxisAngle(new THREE.Vector3(0, 1, 0), mouseControl.rotation.y);
-        const qy = new THREE.Quaternion();
-        qy.setFromAxisAngle(new THREE.Vector3(1, 0, 0), mouseControl.rotation.x);
-        robotGroup.quaternion.multiplyQuaternions(qx, qy);
-
-        mouseControl.previousMousePosition = { x: e.clientX, y: e.clientY };
-    }
-
-    function onMouseUp() {
-        mouseControl.isDragging = false;
-    }
-
-    function onDoubleClick() {
-        // Toggle pause
-        playbackState.isPaused = !playbackState.isPaused;
-        updateUiPanel();
-        console.log('[URDF Viewer] Playback ' + (playbackState.isPaused ? 'paused' : 'resumed'));
-    }
-
-    // ========== UI Panel ==========
-    function setupUiPanel(container) {
-        uiPanel = document.createElement('div');
-        uiPanel.style.cssText = `
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #fff;
-            padding: 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-family: monospace;
-            max-width: 280px;
-            border: 1px solid #444;
-            z-index: 100;
-        `;
-        uiPanel.id = 'urdfViewerPanel';
-        container.appendChild(uiPanel);
-        updateUiPanel();
-    }
-
-    function updateUiPanel() {
-        if (!uiPanel) return;
-        let html = `<div style="margin-bottom: 8px; font-weight: bold;">🤖 Robot State</div>`;
-        
-        html += `<div style="margin-bottom: 6px;">
-            <div>Status: <span style="color: ${playbackState.isPaused ? '#ff6b6b' : '#51cf66'};">
-                ${playbackState.isPaused ? 'PAUSED' : 'PLAYING'}
-            </span></div>
-        </div>`;
-        
-        html += `<div style="margin-bottom: 6px;">
-            <div style="color: #888; margin-bottom: 4px;">Joint Angles (rad):</div>`;
-        
-        // Show left arm joints
-        const joints = [
-            { name: 'fl_joint1', label: 'J1' },
-            { name: 'fl_joint2', label: 'J2' },
-            { name: 'fl_joint3', label: 'J3' },
-            { name: 'fl_joint4', label: 'J4' },
-            { name: 'fl_joint5', label: 'J5' },
-            { name: 'fl_joint6', label: 'J6' },
-        ];
-        
-        joints.forEach(joint => {
-            const value = currentJointValues[joint.name] || 0;
-            html += `<div>${joint.label}: ${value.toFixed(3)}</div>`;
-        });
-        
-        html += `</div>`;
-        
-        // Show gripper
-        const gripperValue = currentJointValues['fl_joint7'] || 0;
-        html += `<div style="color: #888; margin-bottom: 4px;">Gripper:</div>`;
-        html += `<div>Position: ${gripperValue.toFixed(3)}</div>`;
-        
-        // Show frame info
-        html += `<div style="margin-top: 8px; color: #888;">
-            Frame: ${playbackState.currentFrameIndex + 1} / ${playbackState.recordedFrames.length}
-        </div>`;
-        
-        // Show controls
-        html += `<div style="margin-top: 8px; font-size: 11px; color: #aaa;">
-            <div>📌 Drag to rotate</div>
-            <div>⏸️  Double-click to pause</div>
-            <div>💾 Press 'E' to export</div>
-        </div>`;
-        
-        uiPanel.innerHTML = html;
-    }
-
-    // ========== URDF Parsing ==========
-    function parseUrdfXml(xmlText) {
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-
-        if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
-            console.error('[URDF Viewer] XML Parse Error');
-            return null;
-        }
-
-        const robotElem = xmlDoc.querySelector('robot');
-        const robotName = robotElem ? robotElem.getAttribute('name') : 'robot';
-
-        const links = {};
-        const linkElems = xmlDoc.querySelectorAll('link');
-        linkElems.forEach(linkElem => {
-            const linkName = linkElem.getAttribute('name');
-            const visualElems = linkElem.querySelectorAll('visual');
-            const visuals = [];
-            visualElems.forEach(visualElem => {
-                const originElem = visualElem.querySelector('origin');
-                const meshElem = visualElem.querySelector('geometry mesh');
-                if (meshElem) {
-                    const origin = parseOrigin(originElem);
-                    const filename = meshElem.getAttribute('filename');
-                    visuals.push({
-                        origin: origin,
-                        filename: filename,
-                    });
-                }
-            });
-            links[linkName] = { visuals: visuals };
+        const THREE = modules.THREE;
+        const manager = new THREE.LoadingManager();
+        const geometryLoaded = new Promise(function (resolve) {
+            manager.onLoad = resolve;
         });
 
-        const jointsList = [];
-        const jointMap = {};
-        const jointElems = xmlDoc.querySelectorAll('joint');
-        jointElems.forEach(jointElem => {
-            const jointName = jointElem.getAttribute('name');
-            const jointType = jointElem.getAttribute('type');
-            const parentElem = jointElem.querySelector('parent');
-            const childElem = jointElem.querySelector('child');
-            const originElem = jointElem.querySelector('origin');
-            const axisElem = jointElem.querySelector('axis');
-            const limitElem = jointElem.querySelector('limit');
+        const loader = new modules.URDFLoader(manager);
+        loader.fetchOptions = { mode: 'cors', credentials: 'same-origin' };
+        loader.parseCollision = false;
+        loader.loadMeshCb = function (path, meshManager, done) {
+            const ext = (path.split('.').pop() || '').toLowerCase();
 
-            const joint = {
-                name: jointName,
-                type: jointType,
-                parent: parentElem ? parentElem.getAttribute('link') : null,
-                child: childElem ? childElem.getAttribute('link') : null,
-                origin: parseOrigin(originElem),
-                axis: axisElem
-                    ? {
-                          x: parseFloat(axisElem.getAttribute('xyz').split(' ')[0]) || 0,
-                          y: parseFloat(axisElem.getAttribute('xyz').split(' ')[1]) || 0,
-                          z: parseFloat(axisElem.getAttribute('xyz').split(' ')[2]) || 0,
-                      }
-                    : { x: 0, y: 0, z: 1 },
-                limits: limitElem
-                    ? {
-                          lower: parseFloat(limitElem.getAttribute('lower')) || -Math.PI,
-                          upper: parseFloat(limitElem.getAttribute('upper')) || Math.PI,
-                      }
-                    : { lower: -Math.PI, upper: Math.PI },
-            };
-            jointsList.push(joint);
-            jointMap[jointName] = joint;
-        });
-
-        return {
-            name: robotName,
-            links: links,
-            joints: jointsList,
-            jointMap: jointMap,
-        };
-    }
-
-    function parseOrigin(originElem) {
-        const xyz = originElem ? (originElem.getAttribute('xyz') || '0 0 0').split(' ') : ['0', '0', '0'];
-        const rpy = originElem ? (originElem.getAttribute('rpy') || '0 0 0').split(' ') : ['0', '0', '0'];
-        return {
-            position: [parseFloat(xyz[0]), parseFloat(xyz[1]), parseFloat(xyz[2])],
-            rotation: [parseFloat(rpy[0]), parseFloat(rpy[1]), parseFloat(rpy[2])],
-        };
-    }
-
-    // ========== Model Loading ==========
-    async function loadUrdf(urdfPath) {
-        try {
-            console.log('[URDF Viewer] Loading URDF from:', urdfPath);
-            const response = await fetch(urdfPath);
-            if (!response.ok) {
-                console.error(`[URDF Viewer] HTTP Error: ${response.status} ${response.statusText}`);
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const urdfText = await response.text();
-            console.log(`[URDF Viewer] URDF file loaded (${urdfText.length} bytes)`);
-            
-            urdfData = parseUrdfXml(urdfText);
-
-            if (!urdfData) {
-                console.error('[URDF Viewer] Failed to parse URDF - XML parsing error');
-                return false;
-            }
-
-            console.log('[URDF Viewer] URDF parsed successfully:', urdfData.name);
-            console.log('[URDF Viewer] Links found:', Object.keys(urdfData.links).length);
-            console.log('[URDF Viewer] Joints found:', urdfData.joints.length);
-            console.log('[URDF Viewer] Link names:', Object.keys(urdfData.links));
-            return true;
-        } catch (error) {
-            console.error('[URDF Viewer] Failed to load URDF:', error.message);
-            console.error('[URDF Viewer] Stack trace:', error.stack);
-            return false;
-        }
-    }
-
-    async function buildRobotModel() {
-        if (!urdfData) {
-            console.error('[URDF Viewer] Cannot build model: urdfData is null');
-            return false;
-        }
-
-        console.log('[URDF Viewer] Building robot model...');
-        console.log('[URDF Viewer] Mesh path:', CONFIG.meshPath);
-
-        robotGroup.clear();
-        linkMeshes = {};
-        joints = {};
-        jointLimits = {};
-
-        // Build joint structure
-        urdfData.joints.forEach(joint => {
-            joints[joint.name] = {
-                type: joint.type,
-                parent: joint.parent,
-                child: joint.child,
-                origin: joint.origin,
-                axis: joint.axis,
-                angle: 0,
-                distance: 0,
-            };
-            jointLimits[joint.name] = joint.limits;
-            currentJointValues[joint.name] = 0;
-        });
-        console.log('[URDF Viewer] Joint structure built:', Object.keys(joints).length, 'joints');
-
-        // Create link scene graph starting from base_link
-        try {
-            await createLinkHierarchy('base_link', robotGroup);
-        } catch (error) {
-            console.error('[URDF Viewer] Error during link hierarchy creation:', error);
-            return false;
-        }
-
-        console.log('[URDF Viewer] ✅ Robot model built successfully');
-        console.log('[URDF Viewer] Link meshes loaded:', Object.keys(linkMeshes).length);
-        return true;
-    }
-
-    async function createLinkHierarchy(linkName, parentGroup, parentJoint = null) {
-        const linkGroup = new THREE.Group();
-        linkGroup.name = linkName;
-
-        // Apply parent joint STATIC transformation (origin)
-        if (parentJoint) {
-            const [px, py, pz] = parentJoint.origin.position;
-            linkGroup.position.set(px, py, pz);
-            applyRotation(linkGroup, parentJoint.origin.rotation);
-            console.log(`[URDF Viewer] Link '${linkName}' connected via joint '${parentJoint.name}'`);
-        } else {
-            console.log(`[URDF Viewer] Creating root link: ${linkName}`);
-        }
-
-        // Load and add visuals for this link
-        const linkData = urdfData.links[linkName];
-        if (linkData && linkData.visuals.length > 0) {
-            console.log(`[URDF Viewer]   Link has ${linkData.visuals.length} visual(s)`);
-            for (const visual of linkData.visuals) {
-                try {
-                    const mesh = await loadMesh(visual.filename);
-                    if (mesh) {
-                        const visualGroup = new THREE.Group();
-                        const [vx, vy, vz] = visual.origin.position;
-                        visualGroup.position.set(vx, vy, vz);
-                        applyRotation(visualGroup, visual.origin.rotation);
-                        visualGroup.add(mesh);
-                        linkGroup.add(visualGroup);
-                        console.log(`[URDF Viewer]   ✅ Added mesh to ${linkName}`);
-                    } else {
-                        console.warn(`[URDF Viewer]   ⚠️ Mesh loaded as null for ${linkName}/${visual.filename}`);
-                    }
-                } catch (error) {
-                    console.error(`[URDF Viewer]   ❌ Exception loading mesh for ${linkName}/${visual.filename}:`, error);
-                }
-            }
-        } else {
-            console.log(`[URDF Viewer]   Link '${linkName}' has no visuals`);
-        }
-
-        parentGroup.add(linkGroup);
-        linkMeshes[linkName] = linkGroup;
-
-        // Find child joints and recursively create child links
-        const childJoints = urdfData.joints.filter(j => j.parent === linkName);
-        if (childJoints.length > 0) {
-            console.log(`[URDF Viewer]   Link '${linkName}' has ${childJoints.length} child joint(s)`);
-        }
-        for (const childJoint of childJoints) {
-            await createLinkHierarchy(childJoint.child, linkGroup, childJoint);
-        }
-    }
-
-    async function loadMesh(filename) {
-        // Convert filename from URDF format to URL
-        let meshPath = filename;
-        if (meshPath.startsWith('./')) {
-            meshPath = meshPath.substring(2);
-        }
-        const meshUrl = CONFIG.meshPath + meshPath;
-        console.log(`[URDF Viewer] Loading mesh: ${filename} → ${meshUrl}`);
-
-        try {
-            if (meshUrl.endsWith('.glb')) {
-                console.log(`[URDF Viewer]   Using GLTFLoader for: ${meshUrl}`);
-                return await loadGltf(meshUrl);
-            } else if (meshUrl.endsWith('.dae')) {
-                console.log(`[URDF Viewer]   Using ColladaLoader for: ${meshUrl}`);
-                return await loadDae(meshUrl);
-            } else {
-                console.warn(`[URDF Viewer]   Unknown format: ${meshUrl}`);
-            }
-        } catch (error) {
-            console.error(`[URDF Viewer] ❌ Failed to load mesh ${filename}:`);
-            console.error(`[URDF Viewer]   URL: ${meshUrl}`);
-            console.error(`[URDF Viewer]   Error: ${error.message}`);
-            console.error(`[URDF Viewer]   Stack: ${error.stack}`);
-        }
-        return null;
-    }
-
-    function loadGltf(url) {
-        return new Promise((resolve, reject) => {
-            const loader = new THREE.GLTFLoader();
-            loader.load(
-                url,
-                (gltf) => {
-                    const scene = gltf.scene;
-                    scene.castShadow = true;
-                    scene.receiveShadow = true;
-                    scene.traverse((node) => {
-                        if (node.isMesh) {
-                            node.castShadow = true;
-                            node.receiveShadow = true;
-                        }
-                    });
-                    resolve(scene);
-                },
-                undefined,
-                (error) => {
-                    reject(error);
-                }
-            );
-        });
-    }
-
-    function loadDae(url) {
-        return new Promise((resolve, reject) => {
-            const loader = new THREE.ColladaLoader();
-            loader.load(
-                url,
-                (collada) => {
-                    const scene = collada.scene;
-                    scene.castShadow = true;
-                    scene.receiveShadow = true;
-                    scene.traverse((node) => {
-                        if (node.isMesh) {
-                            node.castShadow = true;
-                            node.receiveShadow = true;
-                        }
-                    });
-                    resolve(scene);
-                },
-                undefined,
-                (error) => {
-                    reject(error);
-                }
-            );
-        });
-    }
-
-    function applyRotation(obj, rpy) {
-        const euler = new THREE.Euler(rpy[0], rpy[1], rpy[2], 'XYZ');
-        obj.quaternion.setFromEuler(euler);
-    }
-
-    // ========== Joint Updates ==========
-    function updateJointAngles(jointValues) {
-        Object.assign(currentJointValues, jointValues);
-        
-        // Record frame for export
-        if (!playbackState.isPaused) {
-            playbackState.recordedFrames.push(JSON.parse(JSON.stringify(jointValues)));
-            playbackState.currentFrameIndex = playbackState.recordedFrames.length - 1;
-        }
-        
-        updateRobotPose();
-        updateUiPanel();
-    }
-
-    function updateRobotPose() {
-        // Traverse the robot model and apply joint transforms
-        // The structure is: base_link -> ... -> child_link via joints
-        
-        function updateLinkPose(linkName) {
-            const linkGroup = linkMeshes[linkName];
-            if (!linkGroup) return;
-
-            // Find the joint that connects parent to this link
-            const incomingJoint = urdfData.joints.find((j) => j.child === linkName);
-
-            if (incomingJoint) {
-                // Reset position and rotation to the joint's static origin
-                const [px, py, pz] = incomingJoint.origin.position;
-                linkGroup.position.set(px, py, pz);
-                
-                // Get the default rotation from the joint origin
-                const defaultRotation = new THREE.Euler(
-                    incomingJoint.origin.rotation[0],
-                    incomingJoint.origin.rotation[1],
-                    incomingJoint.origin.rotation[2],
-                    'XYZ'
+            if (ext === 'glb' || ext === 'gltf') {
+                new modules.GLTFLoader(meshManager).load(
+                    path,
+                    function (result) { done(result.scene); },
+                    undefined,
+                    function (error) { done(null, error); }
                 );
-                const defaultQuat = new THREE.Quaternion();
-                defaultQuat.setFromEuler(defaultRotation);
-
-                // Get the current joint value
-                const jointValue = currentJointValues[incomingJoint.name] || 0;
-
-                if (incomingJoint.type === 'revolute') {
-                    // For revolute joints, rotate around the axis
-                    const axisVec = new THREE.Vector3(
-                        incomingJoint.axis.x,
-                        incomingJoint.axis.y,
-                        incomingJoint.axis.z
-                    ).normalize();
-
-                    // Create rotation from joint value
-                    const jointQuat = new THREE.Quaternion();
-                    jointQuat.setFromAxisAngle(axisVec, jointValue);
-                    
-                    // Combine: first default rotation, then joint rotation
-                    // Final = jointQuat * defaultQuat
-                    linkGroup.quaternion.multiplyQuaternions(jointQuat, defaultQuat);
-                } else if (incomingJoint.type === 'prismatic') {
-                    // For prismatic joints, translate along the axis
-                    const axisVec = new THREE.Vector3(
-                        incomingJoint.axis.x,
-                        incomingJoint.axis.y,
-                        incomingJoint.axis.z
-                    ).normalize();
-                    
-                    // Scale axis by joint value and add to position
-                    const translation = axisVec.clone().multiplyScalar(jointValue);
-                    linkGroup.position.add(translation);
-                    
-                    // Apply default rotation
-                    linkGroup.quaternion.copy(defaultQuat);
-                } else {
-                    // Fixed joints: just apply the default rotation
-                    linkGroup.quaternion.copy(defaultQuat);
-                }
+                return;
             }
 
-            // Recursively update child links
-            const childJoints = urdfData.joints.filter((j) => j.parent === linkName);
-            childJoints.forEach((childJoint) => {
-                updateLinkPose(childJoint.child);
-            });
+            if (ext === 'dae') {
+                new modules.ColladaLoader(meshManager).load(
+                    path,
+                    function (result) { done(result.scene); },
+                    undefined,
+                    function (error) { done(null, error); }
+                );
+                return;
+            }
+
+            loader.defaultMeshLoader(path, meshManager, done);
+        };
+
+        currentUrdfUrl = await resolveUrdfUrl();
+        console.log('[URDF Viewer] Loading robot from:', currentUrdfUrl);
+
+        const loadedRobot = await loader.loadAsync(currentUrdfUrl);
+        await geometryLoaded;
+
+        robot = loadedRobot;
+        // ROS URDF is typically Z-up. Three.js is Y-up.
+        // The example repo uses +PI/2 for a different model, but this robot
+        // needs -PI/2 or it appears flipped upside down.
+        robot.rotation.x = -Math.PI / 2;
+
+        robot.traverse(function (child) {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+
+        robot.updateMatrixWorld(true);
+        const floorBounds = new THREE.Box3().setFromObject(robot);
+        if (!floorBounds.isEmpty()) {
+            robot.position.y -= floorBounds.min.y;
         }
 
-        updateLinkPose('base_link');
+        scene.add(robot);
+        if (pendingJointValues) {
+            applyJointValues(pendingJointValues);
+            pendingJointValues = null;
+        }
+        fitCameraToRobot();
     }
 
-    // ========== Animation Loop ==========
     function animate() {
-        animationFrameId = requestAnimationFrame(animate);
-        renderer.render(scene, camera);
+        animationFrameId = window.requestAnimationFrame(animate);
+        if (controls) controls.update();
+        if (renderer && scene && camera) renderer.render(scene, camera);
     }
 
-    // ========== Export Functionality ==========
-    function exportRecordedData() {
-        if (playbackState.recordedFrames.length === 0) {
-            console.log('[URDF Viewer] No frames recorded');
-            alert('没有录制的帧数据');
+    function buildJointMap(joints, gripper) {
+        const normalized = normalizeReplayJointPayload(joints, gripper);
+        const values = {};
+
+        if (normalized.leftArm.length >= 6) {
+            values.fl_joint1 = normalized.leftArm[0];
+            values.fl_joint2 = normalized.leftArm[1];
+            values.fl_joint3 = normalized.leftArm[2];
+            values.fl_joint4 = normalized.leftArm[3];
+            values.fl_joint5 = normalized.leftArm[4];
+            values.fl_joint6 = normalized.leftArm[5];
+        }
+
+        if (normalized.rightArm.length >= 6) {
+            values.fr_joint1 = normalized.rightArm[0];
+            values.fr_joint2 = normalized.rightArm[1];
+            values.fr_joint3 = normalized.rightArm[2];
+            values.fr_joint4 = normalized.rightArm[3];
+            values.fr_joint5 = normalized.rightArm[4];
+            values.fr_joint6 = normalized.rightArm[5];
+        }
+
+        if (isFinite(normalized.leftGripper)) {
+            const leftGripperPos = -normalized.leftGripper * 0.05;
+            values.fl_joint7 = leftGripperPos;
+            values.fl_joint8 = -leftGripperPos;
+        }
+
+        if (isFinite(normalized.rightGripper)) {
+            const rightGripperPos = -normalized.rightGripper * 0.05;
+            values.fr_joint7 = rightGripperPos;
+            values.fr_joint8 = -rightGripperPos;
+        }
+
+        return values;
+    }
+
+    function applyJointValues(values) {
+        if (!values) return;
+        if (!robot) {
+            pendingJointValues = Object.assign({}, pendingJointValues || {}, values);
             return;
         }
 
-        const data = {
-            timestamp: new Date().toISOString(),
-            robotName: urdfData ? urdfData.name : 'unknown',
-            frameCount: playbackState.recordedFrames.length,
-            frames: playbackState.recordedFrames,
-        };
+        currentJointValues = Object.assign({}, currentJointValues, values);
 
-        const json = JSON.stringify(data, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `robot_trajectory_${Date.now()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        let appliedCount = 0;
+        Object.keys(values).forEach(function (jointName) {
+            if (!robot.joints || !robot.joints[jointName]) {
+                console.warn('[URDF Viewer] Joint not found in robot:', jointName);
+                return;
+            }
 
-        console.log('[URDF Viewer] Exported', playbackState.recordedFrames.length, 'frames');
+            const value = values[jointName];
+            robot.setJointValue(jointName, value);
+            appliedCount += 1;
+        });
+
+        if (appliedCount === 0) {
+            console.warn('[URDF Viewer] No joint values were applied for payload:', values);
+        }
+
+        robot.updateMatrixWorld(true);
+
+        if (!playbackState.isPaused) {
+            playbackState.recordedFrames.push(Object.assign({}, currentJointValues));
+            playbackState.currentFrameIndex = Math.max(playbackState.recordedFrames.length - 1, 0);
+        }
+
+        updateStatusPanel();
     }
 
-    // ========== Keyboard Controls ==========
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'e' || e.key === 'E') {
-            exportRecordedData();
-        }
-        if (e.key === ' ') {
-            playbackState.isPaused = !playbackState.isPaused;
-            updateUiPanel();
-            e.preventDefault();
-        }
-    });
+    function showError(message) {
+        setPlaceholder(
+            '<div style="text-align:center;color:#ff9380;padding:20px;">' +
+            '<div style="font-size:24px;margin-bottom:10px;">URDF 加载失败</div>' +
+            '<div style="font-size:12px;color:#b6bcc8;line-height:1.8;">' +
+            message +
+            '</div>' +
+            '</div>',
+            true
+        );
+    }
 
-    // ========== Public API ==========
     window.UrdfViewer = {
-        async init(containerId = CONFIG.containerSelector) {
-            const container = document.querySelector(containerId);
-            if (!container) {
-                console.error('[URDF Viewer] Container not found:', containerId);
+        init: async function (containerId) {
+            if (initialized) return true;
+
+            containerEl = document.querySelector(containerId || CONFIG.containerSelector);
+            if (!containerEl) {
+                console.error('[URDF Viewer] Container not found:', containerId || CONFIG.containerSelector);
                 return false;
             }
 
-            console.log('[URDF Viewer] Initializing...');
+            containerEl.style.position = 'relative';
+            setPlaceholder('加载 URDF Viewer 模块中...');
 
-            // Show loading state
-            const placeholder = container.querySelector('.replayviewer-urdf-ph');
-            if (placeholder) {
-                placeholder.textContent = '加载 Three.js 库中...';
-            }
-
-            // Load Three.js libraries with fallback
-            const threeJsLoaded = await loadThreeJsLibraries();
-            
-            if (!threeJsLoaded) {
-                console.error('[URDF Viewer] Failed to load Three.js from all CDN sources');
-                if (placeholder) {
-                    placeholder.innerHTML = `
-                        <div style="text-align: center; color: #ff6b6b;">
-                            <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
-                            <div style="margin-bottom: 8px;">Three.js 库加载失败</div>
-                            <div style="font-size: 12px; color: #aaa; margin-bottom: 12px;">
-                                请检查网络连接或尝试：
-                            </div>
-                            <div style="font-size: 12px; color: #888; line-height: 1.8;">
-                                • 刷新页面 (Ctrl+R)<br>
-                                • 清除浏览器缓存 (Ctrl+Shift+Delete)<br>
-                                • 检查科学上网<br>
-                                • 尝试其他浏览器
-                            </div>
-                        </div>
-                    `;
-                }
+            try {
+                await initThreeScene();
+                setPlaceholder('加载 URDF 模型中...');
+                await loadRobot();
+                hidePlaceholder();
+                animate();
+                initialized = true;
+                return true;
+            } catch (error) {
+                console.error('[URDF Viewer] Initialization failed:', error);
+                showError('请打开 F12 Console 查看错误。<br>' + String(error.message || error));
                 return false;
             }
-
-            // Wait for Three.js to be fully available
-            let attempts = 0;
-            while (!checkThreeJs() && attempts < 10) {
-                await new Promise(resolve => setTimeout(resolve, 200));
-                attempts++;
-            }
-
-            if (!checkThreeJs()) {
-                if (placeholder) {
-                    placeholder.textContent = 'Three.js 初始化失败';
-                }
-                console.error('[URDF Viewer] Three.js failed to initialize');
-                return false;
-            }
-
-            console.log('[URDF Viewer] Three.js ready');
-
-            if (placeholder) {
-                placeholder.textContent = 'URDF 加载中...';
-            }
-
-            // Initialize Three.js
-            initThreeJs(container);
-
-            // Load URDF
-            console.log('[URDF Viewer] ===== URDF Loading Phase =====');
-            if (placeholder) {
-                placeholder.textContent = 'URDF 加载中...';
-            }
-            const urdfLoaded = await loadUrdf(CONFIG.urdfPath);
-            if (!urdfLoaded) {
-                if (placeholder) {
-                    placeholder.innerHTML = `
-                        <div style="text-align: center; color: #ff6b6b; padding: 20px;">
-                            <div style="font-size: 24px; margin-bottom: 10px;">❌ URDF 加载失败</div>
-                            <div style="font-size: 12px; color: #aaa; margin-bottom: 12px;">
-                                请检查浏览器控制台 (F12) 的错误信息
-                            </div>
-                            <div style="font-size: 12px; color: #888; line-height: 1.8; text-align: left; max-width: 300px; margin: 0 auto;">
-                                📋 Console 中应该看到：<br>
-                                • [URDF Viewer] Loading URDF from: /y1_dual/y1_dual.urdf<br>
-                                • 以及具体的错误信息<br><br>
-                                ✅ 解决方案：<br>
-                                • 检查URDF文件路径<br>
-                                • 刷新页面并查看控制台<br>
-                                • 检查网络连接
-                            </div>
-                        </div>
-                    `;
-                }
-                console.error('[URDF Viewer] URDF Loading failed - see error details above');
-                return false;
-            }
-
-            // Build robot model
-            console.log('[URDF Viewer] ===== Model Building Phase =====');
-            if (placeholder) {
-                placeholder.textContent = '构建模型中...';
-            }
-
-            const modelBuilt = await buildRobotModel();
-            if (!modelBuilt) {
-                if (placeholder) {
-                    placeholder.innerHTML = `
-                        <div style="text-align: center; color: #ff6b6b; padding: 20px;">
-                            <div style="font-size: 24px; margin-bottom: 10px;">❌ 模型构建失败</div>
-                            <div style="font-size: 12px; color: #aaa; margin-bottom: 12px;">
-                                请检查浏览器控制台 (F12) 的错误信息
-                            </div>
-                            <div style="font-size: 12px; color: #888; line-height: 1.8; text-align: left; max-width: 300px; margin: 0 auto;">
-                                📋 常见问题：<br>
-                                • 网格文件路径错误<br>
-                                • 网格文件不存在<br>
-                                • Three.js 加载器缺失<br><br>
-                                ✅ 调试步骤：<br>
-                                1. F12 打开控制台<br>
-                                2. 查找 [URDF Viewer] 日志<br>
-                                3. 查看具体错误信息
-                            </div>
-                        </div>
-                    `;
-                }
-                console.error('[URDF Viewer] Model building failed - see error details above');
-                return false;
-            }
-
-            // Ensure the model is in view even if URDF scale/origin differs.
-            fitCameraToRobot();
-
-            // Remove placeholder
-            if (placeholder) {
-                placeholder.style.display = 'none';
-            }
-
-            // Start animation
-            animate();
-
-            console.log('[URDF Viewer] Initialization complete');
-            return true;
         },
 
-        updateJoints(jointValues) {
-            if (!initialized) return;
-            updateJointAngles(jointValues);
+        updateJoints: function (jointValues) {
+            applyJointValues(jointValues);
         },
 
-        // For compatibility with replay viewer
-        updateFromReplayData(joints, gripper) {
-            if (!initialized) return;
-
-            const jointValues = {};
-            if (joints && joints.length >= 6) {
-                jointValues['fl_joint1'] = joints[0];
-                jointValues['fl_joint2'] = joints[1];
-                jointValues['fl_joint3'] = joints[2];
-                jointValues['fl_joint4'] = joints[3];
-                jointValues['fl_joint5'] = joints[4];
-                jointValues['fl_joint6'] = joints[5];
-
-                jointValues['fr_joint1'] = joints[0];
-                jointValues['fr_joint2'] = joints[1];
-                jointValues['fr_joint3'] = joints[2];
-                jointValues['fr_joint4'] = joints[3];
-                jointValues['fr_joint5'] = joints[4];
-                jointValues['fr_joint6'] = joints[5];
-            }
-
-            if (gripper !== undefined && gripper !== null) {
-                const gripperPos = -gripper * 0.05;
-                jointValues['fl_joint7'] = gripperPos;
-                jointValues['fl_joint8'] = -gripperPos;
-
-                jointValues['fr_joint7'] = gripperPos;
-                jointValues['fr_joint8'] = -gripperPos;
-            }
-
-            updateJointAngles(jointValues);
+        updateFromReplayData: function (joints, gripper) {
+            applyJointValues(buildJointMap(joints, gripper));
         },
 
-        dispose() {
+        dispose: function () {
             if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
+                window.cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
             }
+
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+                resizeObserver = null;
+            }
+
+            window.removeEventListener('resize', onResize);
+
+            if (controls) {
+                controls.dispose();
+                controls = null;
+            }
+
             if (renderer) {
                 renderer.dispose();
+                if (renderer.domElement && renderer.domElement.parentNode) {
+                    renderer.domElement.parentNode.removeChild(renderer.domElement);
+                }
+                renderer = null;
             }
+
+            if (statusPanel && statusPanel.parentNode) {
+                statusPanel.parentNode.removeChild(statusPanel);
+                statusPanel = null;
+            }
+
+            if (robot && robot.parent) {
+                robot.parent.remove(robot);
+            }
+
+            robot = null;
+            scene = null;
+            camera = null;
+            containerEl = null;
+            currentUrdfUrl = null;
+            initialized = false;
+            currentJointValues = {};
+            pendingJointValues = null;
+            playbackState = {
+                isPaused: false,
+                recordedFrames: [],
+                currentFrameIndex: 0,
+            };
         },
     };
 
-    // Auto-initialize when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('[URDF Viewer] DOM loaded, scheduling auto-initialization...');
-            // Delay to allow external scripts to load
-            setTimeout(() => {
-                window.UrdfViewer.init().catch(err => {
-                    console.error('[URDF Viewer] Auto-init failed:', err);
-                });
-            }, 1000);
-        });
-    } else {
-        console.log('[URDF Viewer] DOM already loaded, scheduling auto-initialization...');
-        setTimeout(() => {
-            window.UrdfViewer.init().catch(err => {
-                console.error('[URDF Viewer] Auto-init failed:', err);
-            });
-        }, 1000);
-    }
-
-    console.log('[URDF Viewer] Module loaded and ready');
+    document.addEventListener('keydown', function (event) {
+        if (event.key === ' ') {
+            playbackState.isPaused = !playbackState.isPaused;
+            updateStatusPanel();
+            event.preventDefault();
+        }
+    });
 })();
