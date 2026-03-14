@@ -5,14 +5,17 @@
 
 (function () {
     'use strict';
-
+    let urdf_dir = '../urdf'; // put your urdf files in this directory, or change this path as needed
+    let model_name = 'y1_dual';
     const CONFIG = {
         // URDF path candidates to try loading from
         urdfPathCandidates: [
-            '/y1_dual/y1_dual.urdf',
-            'y1_dual/y1_dual.urdf',
-            './y1_dual/y1_dual.urdf',
-            '../y1_dual/y1_dual.urdf',
+            urdf_dir + '/' + model_name + '/' + model_name + '.urdf', // ../urdf/y1_dual/y1_dual.urdf
+            // other candidate urdf pathes can be added here
+            // '/y1_dual/y1_dual.urdf',
+            // 'y1_dual/y1_dual.urdf',
+            // './y1_dual/y1_dual.urdf',
+            // '../y1_dual/y1_dual.urdf',
         ],
         containerSelector: '#replayviewerUrdfContainer',
         cameraPosition: [2.8, 2.2, 2.8],
@@ -275,9 +278,10 @@
     }
 
     function updateStatusPanel() {
+        // Status of the robot
         if (!statusPanel) return;
 
-        const jointNames = [
+        const leftJointNames = [
             'fl_joint1',
             'fl_joint2',
             'fl_joint3',
@@ -286,21 +290,40 @@
             'fl_joint6',
         ];
 
-        const rows = jointNames.map(function (name, index) {
+        const rightJointNames = [
+            'fr_joint1',
+            'fr_joint2',
+            'fr_joint3',
+            'fr_joint4',
+            'fr_joint5',
+            'fr_joint6',
+        ];
+
+        const leftRows = leftJointNames.map(function (name, index) {
             const value = currentJointValues[name] || 0;
             return '<div>J' + (index + 1) + ': ' + value.toFixed(3) + '</div>';
         }).join('');
 
-        const gripperValue = currentJointValues.fl_joint7 || 0;
+        const rightRows = rightJointNames.map(function (name, index) {
+            const value = currentJointValues[name] || 0;
+            return '<div>J' + (index + 1) + ': ' + value.toFixed(3) + '</div>';
+        }).join('');
+
+        const leftGripperValue = currentJointValues.fl_joint7 || 0;
+        const rightGripperValue = currentJointValues.fr_joint7 || 0;
         const stateColor = playbackState.isPaused ? '#ff8c69' : '#78d381';
         const stateLabel = playbackState.isPaused ? 'PAUSED' : 'PLAYING';
 
         statusPanel.innerHTML = [
-            '<div style="font-weight:bold;margin-bottom:6px;">URDF Robot</div>',
+            '<div style="font-weight:bold;margin-bottom:6px;">' + model_name + '</div>',
             '<div style="margin-bottom:6px;">State: <span style="color:' + stateColor + ';">' + stateLabel + '</span></div>',
             '<div style="color:#97a0b3;margin-bottom:4px;">Left Arm</div>',
-            rows,
-            '<div style="margin-top:6px;">Gripper: ' + gripperValue.toFixed(3) + '</div>',
+            leftRows,
+            '<div style="margin-top:6px;">Left Gripper: ' + leftGripperValue.toFixed(3) + '</div>',
+            '<div style="color:#97a0b3;margin-bottom:4px;">Right Arm</div>',
+            rightRows,
+            '<div style="margin-top:6px;">Right Gripper: ' + rightGripperValue.toFixed(3) + '</div>',
+
             '<div style="margin-top:6px;color:#97a0b3;">Frame: ' + (playbackState.currentFrameIndex + 1) + ' / ' + playbackState.recordedFrames.length + '</div>',
             '<div style="margin-top:8px;color:#97a0b3;">Drag rotate, wheel zoom</div>',
         ].join('');
@@ -311,7 +334,7 @@
         const THREE = modules.THREE;
 
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x10141c);
+        scene.background = new THREE.Color(0xfaf3e0);
 
         camera = new THREE.PerspectiveCamera(
             45,
@@ -336,13 +359,13 @@
         controls.target.set(CONFIG.controlsTarget[0], CONFIG.controlsTarget[1], CONFIG.controlsTarget[2]);
         controls.update();
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
         scene.add(ambientLight);
 
-        const hemisphereLight = new THREE.HemisphereLight(0xbfd9ff, 0x0f1118, 1.1);
+        const hemisphereLight = new THREE.HemisphereLight(0xdde6f3, 0x444444, 0.8);
         scene.add(hemisphereLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.6);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
         directionalLight.castShadow = true;
         directionalLight.position.set(5, 8, 6);
         directionalLight.shadow.mapSize.setScalar(2048);

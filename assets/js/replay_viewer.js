@@ -239,6 +239,27 @@
     drawLine(gCtx, gd, GRIPPER_COLOR, gw, gh, gmn - gpad, gmx + gpad, false);
     }
 
+    function decodeNumpyArray(obj) {
+    // Decode { __numpy_array__: true, data: '<base64>', dtype: 'float64'|'float32'|..., shape: [...] }
+    try {
+        var binaryStr = atob(obj.data);
+        var bytes = new Uint8Array(binaryStr.length);
+        for (var i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+        }
+        var dtype = (obj.dtype || 'float64').toLowerCase();
+        var TypedCtor = dtype === 'float32' ? Float32Array
+                      : dtype === 'int32'   ? Int32Array
+                      : dtype === 'int64'   ? BigInt64Array
+                      : Float64Array; // default float64
+        var typed = new TypedCtor(bytes.buffer);
+        return Array.from(typed, function (v) { return Number(v); });
+    } catch (e) {
+        console.warn('[Replay Viewer] decodeNumpyArray failed:', e);
+        return [];
+    }
+    }
+
     function flattenNumericValues(value) {
     if (value === undefined || value === null) return [];
     if (typeof value === 'number') return isFinite(value) ? [value] : [];
@@ -254,6 +275,9 @@
         return out;
     }
     if (typeof value === 'object') {
+        if (value.__numpy_array__ === true && typeof value.data === 'string') {
+        return decodeNumpyArray(value);
+        }
         if (value.data !== undefined) {
         return flattenNumericValues(value.data);
         }
@@ -288,27 +312,29 @@
     }
 
     function normalizeReplayJointPayload(rawJoints, rawGripper) {
+    console.log('[Replay Viewer] Normalizing joint payload:');
+    console.log('rawJoints:', rawJoints);
     var leftArm = [];
     var rightArm = [];
 
     if (rawJoints && typeof rawJoints === 'object' && !Array.isArray(rawJoints) && !ArrayBuffer.isView(rawJoints)) {
         leftArm = flattenNumericValues(
-        rawJoints.left_arm !== undefined ? rawJoints.left_arm :
-        rawJoints.leftArm !== undefined ? rawJoints.leftArm :
-        rawJoints.arm_left
+            rawJoints.left_arm !== undefined ? rawJoints.left_arm :
+            rawJoints.leftArm !== undefined ? rawJoints.leftArm :
+            rawJoints.arm_left
         );
         rightArm = flattenNumericValues(
-        rawJoints.right_arm !== undefined ? rawJoints.right_arm :
-        rawJoints.rightArm !== undefined ? rawJoints.rightArm :
-        rawJoints.arm_right
+            rawJoints.right_arm !== undefined ? rawJoints.right_arm :
+            rawJoints.rightArm !== undefined ? rawJoints.rightArm :
+            rawJoints.arm_right
         );
     }
 
     if ((!leftArm.length && !rightArm.length)) {
         var merged = flattenNumericValues(rawJoints);
         if (merged.length >= 12) {
-        leftArm = merged.slice(0, 6);
-        rightArm = merged.slice(6, 12);
+            leftArm = merged.slice(0, 6);
+            rightArm = merged.slice(6, 12);
         } else if (merged.length > 6) {
         var half = Math.floor(merged.length / 2);
         leftArm = merged.slice(0, half);
@@ -433,28 +459,29 @@
     }
 
     window.toggleReplayViewerConnection = function () {
-    if (wsConnected) {
-        if (ws) { ws.close(); ws = null; }
-        setWsStatus(false, '未连接');
-    } else {
-        var raw = document.getElementById('replayviewerServerUrl').value.trim();
-        var url = raw.includes('role=viewer') ? raw
-        : (raw.includes('?') ? raw + '&role=viewer' : raw + '?role=viewer');
-        setWsStatus(false, '连接中...');
-        document.getElementById('replayviewerConnectBtn').disabled = true;
-        try {
-        ws = new WebSocket(url);
-        ws.onopen    = function () {
-            setWsStatus(true, '已连接');
-            frameCount = 0; fpsCounter = 0; lastFpsUpdate = Date.now();
-        };
-        ws.onmessage = function (e) { handleFrame(e.data); };
-        ws.onerror   = function () { setWsStatus(false, '连接错误'); };
-        ws.onclose   = function () { setWsStatus(false, '未连接'); };
-        } catch (_) {
-        setWsStatus(false, '连接失败');
+        // 连接状态切换
+        if (wsConnected) {
+            if (ws) { ws.close(); ws = null; }
+            setWsStatus(false, '未连接');
+        } else {
+            var raw = document.getElementById('replayviewerServerUrl').value.trim();
+            var url = raw.includes('role=viewer') ? raw
+            : (raw.includes('?') ? raw + '&role=viewer' : raw + '?role=viewer');
+            setWsStatus(false, '连接中...');
+            document.getElementById('replayviewerConnectBtn').disabled = true;
+            try {
+            ws = new WebSocket(url);
+            ws.onopen    = function () {
+                setWsStatus(true, '已连接');
+                frameCount = 0; fpsCounter = 0; lastFpsUpdate = Date.now();
+            };
+            ws.onmessage = function (e) { handleFrame(e.data); };
+            ws.onerror   = function () { setWsStatus(false, '连接错误'); };
+            ws.onclose   = function () { setWsStatus(false, '未连接'); };
+            } catch (_) {
+            setWsStatus(false, '连接失败');
+            }
         }
-    }
     };
 
     async function handleFrame(data) {
@@ -514,20 +541,21 @@
     }
 
     function updateCamImage(key, imageData) {
-    var b64;
-    if (imageData && imageData.__bytes__ === true) {
-        b64 = imageData.data;
-    } else if (typeof imageData === 'string') {
-        b64 = imageData;
-    } else { return; }
-    var cam = cams[key];
-    cam.img.src          = 'data:image/jpeg;base64,' + b64;
-    cam.img.style.display = 'block';
-    cam.ns.style.display  = 'none';
-    // keep modal in sync if this cam is expanded
-    if (expandedKey === key && modal.classList.contains('open')) {
-        modalImg.src = cam.img.src;
-    }
+        // update Camera images
+        var b64;
+        if (imageData && imageData.__bytes__ === true) {
+            b64 = imageData.data;
+        } else if (typeof imageData === 'string') {
+            b64 = imageData;
+        } else { return; }
+        var cam = cams[key];
+        cam.img.src          = 'data:image/jpeg;base64,' + b64;
+        cam.img.style.display = 'block';
+        cam.ns.style.display  = 'none';
+        // keep modal in sync if this cam is expanded
+        if (expandedKey === key && modal.classList.contains('open')) {
+            modalImg.src = cam.img.src;
+        }
     }
 
     // ── camera expand modal ──
