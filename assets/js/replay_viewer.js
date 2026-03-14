@@ -23,6 +23,7 @@
     const JOINT_COLORS = ['#e05555', '#9b5fe0', '#e0a0c0', '#5598e0', '#60c070', '#e0b855'];
     const GRIPPER_COLOR = '#e07030';
     const RIGHT_GRIPPER_COLOR = '#30b0e0';
+    const CHART_LAYOUT = { left: 36, right: 8, top: 34, bottom: 16 };
     const BUF_SIZE = 200;
     const jointBufs       = Array.from({ length: 6 }, () => new Float32Array(BUF_SIZE));
     const gripperBuf       = new Float32Array(BUF_SIZE);
@@ -47,13 +48,28 @@
 
     let dragState = null;
 
+    function configureHiDpiCanvas(canvas, cssWidth) {
+        if (!canvas) return;
+        var dpr = Math.max(window.devicePixelRatio || 1, 1);
+        var rect = canvas.getBoundingClientRect();
+        var cssHeight = rect.height || canvas.clientHeight || parseFloat(canvas.getAttribute('height')) || 100;
+        var width = Math.max(1, Math.round(cssWidth || rect.width || canvas.clientWidth || 1));
+        var height = Math.max(1, Math.round(cssHeight));
+
+        // Only update backing store size; keep CSS sizing controlled by stylesheet/layout.
+        canvas.width = Math.max(1, Math.round(width * dpr));
+        canvas.height = Math.max(1, Math.round(height * dpr));
+
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
     function resizeCanvases() {
         if (!jointsCanvas) return;
-        const w = jointsCanvas.parentElement.clientWidth;
-        jointsCanvas.width  = w;
-        gripperCanvas.width = w;
-        if (rightJointsCanvas)  rightJointsCanvas.width  = rightJointsCanvas.parentElement.clientWidth;
-        if (rightGripperCanvas) rightGripperCanvas.width = rightGripperCanvas.parentElement.clientWidth;
+        configureHiDpiCanvas(jointsCanvas, jointsCanvas.parentElement.clientWidth);
+        configureHiDpiCanvas(gripperCanvas, gripperCanvas.parentElement.clientWidth);
+        if (rightJointsCanvas) configureHiDpiCanvas(rightJointsCanvas, rightJointsCanvas.parentElement.clientWidth);
+        if (rightGripperCanvas) configureHiDpiCanvas(rightGripperCanvas, rightGripperCanvas.parentElement.clientWidth);
         drawCharts();
     }
 
@@ -186,41 +202,163 @@
         return out;
     }
 
-    function drawLine(ctx, data, color, w, h, minV, maxV, highlighted) {
+    function drawLine(ctx, data, color, w, h, minV, maxV, highlighted, activeHover) {
         if (data.length < 2) return;
         const range = maxV - minV || 1;
+        const plot = getPlotRect(w, h);
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth   = highlighted ? 2.5 : 1.2;
-        ctx.globalAlpha = highlighted ? 1 : (hoveredJoint >= 0 ? 0.22 : 1);
+        const hoverIndex = typeof activeHover === 'number' ? activeHover : -1;
+        ctx.globalAlpha = highlighted ? 1 : (hoverIndex >= 0 ? 0.22 : 1);
         for (let i = 0; i < data.length; i++) {
-            const x = (i / (data.length - 1)) * w;
-            const y = h - ((data[i] - minV) / range) * h * 0.88 - h * 0.06;
+            const x = plot.left + (i / (data.length - 1)) * plot.width;
+            const y = plot.bottom - ((data[i] - minV) / range) * plot.height;
             i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         }
         ctx.stroke();
         ctx.globalAlpha = 1;
     }
 
+    function getPlotRect(w, h) {
+        var left = CHART_LAYOUT.left;
+        var right = Math.max(left + 20, w - CHART_LAYOUT.right);
+        var top = CHART_LAYOUT.top;
+        var bottom = Math.max(top + 20, h - CHART_LAYOUT.bottom);
+        return {
+            left: left,
+            right: right,
+            top: top,
+            bottom: bottom,
+            width: Math.max(1, right - left),
+            height: Math.max(1, bottom - top),
+        };
+    }
+
+    function formatTickValue(value) {
+        if (!isFinite(value)) return '-';
+        if (Math.abs(value) >= 100) return value.toFixed(1);
+        if (Math.abs(value) >= 10) return value.toFixed(2);
+        return value.toFixed(3);
+    }
+
+    function drawAxesAndTicks(ctx, w, h, minV, maxV, sampleCount, xTickCount = 4, yTickCount = 3) {
+        var plot = getPlotRect(w, h);
+        var yTicks = yTickCount;
+        var xTicks = xTickCount;
+
+        ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(plot.left, plot.top);
+        ctx.lineTo(plot.left, plot.bottom);
+        ctx.lineTo(plot.right, plot.bottom);
+        ctx.stroke();
+
+        ctx.font = '10px "Space Grotesk", sans-serif';
+        ctx.fillStyle = 'rgba(20,20,20,0.78)';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+
+        for (var yi = 0; yi <= yTicks; yi++) {
+            var t = yi / yTicks;
+            var y = plot.bottom - t * plot.height;
+            var val = minV + t * (maxV - minV);
+            ctx.beginPath();
+            ctx.moveTo(plot.left - 4, y);
+            ctx.lineTo(plot.right, y);
+            ctx.strokeStyle = yi === 0 ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.06)';
+            ctx.stroke();
+            ctx.fillText(formatTickValue(val), plot.left - 6, y);
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        var total = Math.max(sampleCount - 1, 0);
+        for (var xi = 0; xi <= xTicks; xi++) {
+            var xt = xi / xTicks;
+            var x = plot.left + xt * plot.width;
+            var offset = Math.round(xt * total) - total;
+            ctx.beginPath();
+            ctx.moveTo(x, plot.bottom);
+            ctx.lineTo(x, plot.bottom + 4);
+            ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+            ctx.stroke();
+            ctx.fillText(String(offset), x, plot.bottom + 5);
+        }
+    }
+
+    function measureLegendRow(ctx, legendItems) {
+        ctx.font = '11px "Space Grotesk", sans-serif';
+        var w = 0;
+        for (var i = 0; i < legendItems.length; i++) {
+            w += 16 + ctx.measureText(legendItems[i].text).width;
+            if (i < legendItems.length - 1) w += 12;
+        }
+        return w;
+    }
+
+    function drawLegendRow(ctx, legendItems, x, y) {
+        ctx.font = '11px "Space Grotesk", sans-serif';
+        ctx.textBaseline = 'middle';
+        var cursor = x;
+        for (var i = 0; i < legendItems.length; i++) {
+            var item = legendItems[i];
+            ctx.fillStyle = item.color;
+            ctx.fillRect(cursor, y - 3, 8, 6);
+            cursor += 16;
+            ctx.fillStyle = 'rgba(20,20,20,0.88)';
+            ctx.fillText(item.text, cursor, y);
+            cursor += ctx.measureText(item.text).width + 12;
+        }
+    }
+
+    function drawJointLegend(ctx, dataSet, colors, w) {
+        var entries = [];
+        for (var j = 0; j < 6; j++) {
+            var d = dataSet[j];
+            var last = d.length ? d[d.length - 1] : null;
+            entries.push({
+                color: colors[j],
+                // text: 'J' + (j + 1) + ':' + (last !== null && isFinite(last) ? last.toFixed(3) : '-') // format: J1: 0.123
+                text: 'J' + (j + 1)
+            });
+        }
+        var row1 = entries.slice(0, 3);
+        var row2 = entries.slice(3, 6);
+        ctx.font = '11px "Space Grotesk", sans-serif';
+        var x1 = w - measureLegendRow(ctx, row1) - 8;
+        var x2 = w - measureLegendRow(ctx, row2) - 8;
+        drawLegendRow(ctx, row1, x1, 12);
+        drawLegendRow(ctx, row2, x2, 26);
+    }
+
+    function drawSingleLegend(ctx, label, color, value, w) {
+        var text = label + ': ' + (isFinite(value) ? value.toFixed(4) : '-');
+        var items = [{ color: color, text: text }];
+        ctx.font = '11px "Space Grotesk", sans-serif';
+        var x = w - measureLegendRow(ctx, items) - 8;
+        drawLegendRow(ctx, items, x, 12);
+    }
+
     function drawCharts() {
         // draw joint and gripper charts
         if (!jointsCanvas) return;
         
-        const jw = jointsCanvas.width, jh = jointsCanvas.height;
-        const gw = gripperCanvas.width, gh = gripperCanvas.height;
+        const jw = jointsCanvas.clientWidth || jointsCanvas.parentElement.clientWidth;
+        const jh = jointsCanvas.clientHeight || parseFloat(jointsCanvas.getAttribute('height')) || 130;
+        const gw = gripperCanvas.clientWidth || gripperCanvas.parentElement.clientWidth;
+        const gh = gripperCanvas.clientHeight || parseFloat(gripperCanvas.getAttribute('height')) || 52;
         const jCtx = jointsCanvas.getContext('2d');
         const gCtx = gripperCanvas.getContext('2d');
 
         // left arm joints
         jCtx.clearRect(0, 0, jw, jh);
-        jCtx.strokeStyle = 'rgba(0,0,0,0.07)'; jCtx.lineWidth = 1;
-        [0.25, 0.5, 0.75].forEach(function(f) {
-            jCtx.beginPath(); jCtx.moveTo(0, f * jh); jCtx.lineTo(jw, f * jh); jCtx.stroke();
-        });
-
+        var leftOrdered = [];
         var minV = Infinity, maxV = -Infinity;
         for (var j = 0; j < 6; j++) {
             var d = getOrdered(jointBufs[j]);
+            leftOrdered.push(d);
             for (var k = 0; k < d.length; k++) {
             if (d[k] < minV) minV = d[k];
             if (d[k] > maxV) maxV = d[k];
@@ -230,12 +368,16 @@
         var pad = (maxV - minV) * 0.12 || 0.1;
         minV -= pad; maxV += pad;
 
+        drawAxesAndTicks(jCtx, jw, jh, minV, maxV, bufFilled, 4, 3);
+
+        drawJointLegend(jCtx, leftOrdered, JOINT_COLORS, jw); // left arm legend
+
         for (var j = 0; j < 6; j++) {
-            drawLine(jCtx, getOrdered(jointBufs[j]), JOINT_COLORS[j], jw, jh, minV, maxV, j === hoveredJoint);
+            drawLine(jCtx, leftOrdered[j], JOINT_COLORS[j], jw, jh, minV, maxV, j === hoveredJoint, hoveredJoint);
         }
 
         // left arm gripper
-        gCtx.clearRect(0, 0, gw, gh);
+        gCtx.clearRect(0, 0, gw, gh); 
         gCtx.strokeStyle = 'rgba(0,0,0,0.07)'; gCtx.lineWidth = 1;
         gCtx.beginPath(); gCtx.moveTo(0, gh / 2); gCtx.lineTo(gw, gh / 2); gCtx.stroke();
         var gd = getOrdered(gripperBuf);
@@ -246,20 +388,22 @@
         }
         if (!isFinite(gmn)) { gmn = 0; gmx = 1; }
         var gpad = (gmx - gmn) * 0.12 || 0.1;
-        drawLine(gCtx, gd, GRIPPER_COLOR, gw, gh, gmn - gpad, gmx + gpad, false);
+        drawAxesAndTicks(gCtx, gw, gh, gmn - gpad, gmx + gpad, bufFilled, 4, 2);
+
+        drawSingleLegend(gCtx, 'Gripper', GRIPPER_COLOR, gd.length ? gd[gd.length - 1] : NaN, gw); // gripper legend
+        drawLine(gCtx, gd, GRIPPER_COLOR, gw, gh, gmn - gpad, gmx + gpad, false, -1);
 
         // right arm joints
         if (rightJointsCanvas) {
-            var rjw = rightJointsCanvas.width, rjh = rightJointsCanvas.height;
+            var rjw = rightJointsCanvas.clientWidth || rightJointsCanvas.parentElement.clientWidth;
+            var rjh = rightJointsCanvas.clientHeight || parseFloat(rightJointsCanvas.getAttribute('height')) || 130;
             var rjCtx = rightJointsCanvas.getContext('2d');
             rjCtx.clearRect(0, 0, rjw, rjh);
-            rjCtx.strokeStyle = 'rgba(0,0,0,0.07)'; rjCtx.lineWidth = 1;
-            [0.25, 0.5, 0.75].forEach(function(f) {
-                rjCtx.beginPath(); rjCtx.moveTo(0, f * rjh); rjCtx.lineTo(rjw, f * rjh); rjCtx.stroke();
-            });
+            var rightOrdered = [];
             var rminV = Infinity, rmaxV = -Infinity;
             for (var j = 0; j < 6; j++) {
                 var rd = getOrdered(rightJointBufs[j]);
+                rightOrdered.push(rd);
                 for (var k = 0; k < rd.length; k++) {
                     if (rd[k] < rminV) rminV = rd[k];
                     if (rd[k] > rmaxV) rmaxV = rd[k];
@@ -268,14 +412,20 @@
             if (!isFinite(rminV)) { rminV = -1; rmaxV = 1; }
             var rpad = (rmaxV - rminV) * 0.12 || 0.1;
             rminV -= rpad; rmaxV += rpad;
+
+            drawAxesAndTicks(rjCtx, rjw, rjh, rminV, rmaxV, bufFilled, 4, 3);
+
+            drawJointLegend(rjCtx, rightOrdered, JOINT_COLORS, rjw); // right arm legend
+
             for (var j = 0; j < 6; j++) {
-                drawLine(rjCtx, getOrdered(rightJointBufs[j]), JOINT_COLORS[j], rjw, rjh, rminV, rmaxV, j === hoveredRightJoint);
+                drawLine(rjCtx, rightOrdered[j], JOINT_COLORS[j], rjw, rjh, rminV, rmaxV, j === hoveredRightJoint, hoveredRightJoint);
             }
         }
 
         // right arm gripper
         if (rightGripperCanvas) {
-            var rgw = rightGripperCanvas.width, rgh = rightGripperCanvas.height;
+            var rgw = rightGripperCanvas.clientWidth || rightGripperCanvas.parentElement.clientWidth;
+            var rgh = rightGripperCanvas.clientHeight || parseFloat(rightGripperCanvas.getAttribute('height')) || 52;
             var rgCtx = rightGripperCanvas.getContext('2d');
             rgCtx.clearRect(0, 0, rgw, rgh);
             rgCtx.strokeStyle = 'rgba(0,0,0,0.07)'; rgCtx.lineWidth = 1;
@@ -288,7 +438,10 @@
             }
             if (!isFinite(rgmn)) { rgmn = 0; rgmx = 1; }
             var rgpad = (rgmx - rgmn) * 0.12 || 0.1;
-            drawLine(rgCtx, rgd, RIGHT_GRIPPER_COLOR, rgw, rgh, rgmn - rgpad, rgmx + rgpad, false);
+            drawAxesAndTicks(rgCtx, rgw, rgh, rgmn - rgpad, rgmx + rgpad, bufFilled, 4, 2);
+
+            drawSingleLegend(rgCtx, 'Gripper', RIGHT_GRIPPER_COLOR, rgd.length ? rgd[rgd.length - 1] : NaN, rgw); // right gripper legend
+            drawLine(rgCtx, rgd, RIGHT_GRIPPER_COLOR, rgw, rgh, rgmn - rgpad, rgmx + rgpad, false, -1);
         }
     }
 
@@ -441,7 +594,7 @@
         rightGripperBuf[bufHead] = (rightGripper !== undefined && rightGripper !== null) ? rightGripper : 0;
         bufHead = (bufHead + 1) % BUF_SIZE;
         if (bufFilled < BUF_SIZE) bufFilled++;
-        drawCharts();
+        drawCharts(); // update charts with new data
         
         // Update URDF viewer with current joint values
         if (window.UrdfViewer) {
@@ -453,11 +606,11 @@
     if (jointsCanvas) {
     jointsCanvas.addEventListener('mousemove', function (e) {
         var rect  = jointsCanvas.getBoundingClientRect();
-        var scaleX = jointsCanvas.width  / jointsCanvas.offsetWidth;
-        var scaleY = jointsCanvas.height / jointsCanvas.offsetHeight;
-        var cx = (e.clientX - rect.left) * scaleX;
-        var cy = (e.clientY - rect.top)  * scaleY;
-        var idx = Math.round((cx / jointsCanvas.width) * (bufFilled - 1));
+        var plot = getPlotRect(rect.width, rect.height);
+        var cx = e.clientX - rect.left;
+        var cy = e.clientY - rect.top;
+        var clampedX = Math.min(Math.max(cx, plot.left), plot.right);
+        var idx = Math.round(((clampedX - plot.left) / Math.max(plot.width, 1)) * (bufFilled - 1));
 
         var minV = Infinity, maxV = -Infinity;
         for (var j = 0; j < 6; j++) {
@@ -471,13 +624,13 @@
         var pad   = (maxV - minV) * 0.12 || 0.1;
         minV -= pad; maxV += pad;
         var range = maxV - minV || 1;
-        var jh    = jointsCanvas.height;
+        var jh    = plot.height;
 
         var best = -1, bestDist = 22;
         for (var j = 0; j < 6; j++) {
         var d = getOrdered(jointBufs[j]);
         if (!d.length || idx < 0 || idx >= d.length) continue;
-        var vy = jh - ((d[idx] - minV) / range) * jh * 0.88 - jh * 0.06;
+        var vy = plot.bottom - ((d[idx] - minV) / range) * jh;
         var dist = Math.abs(vy - cy);
         if (dist < bestDist) { bestDist = dist; best = j; }
         }
@@ -506,11 +659,11 @@
     if (rightJointsCanvas) {
     rightJointsCanvas.addEventListener('mousemove', function (e) {
         var rect   = rightJointsCanvas.getBoundingClientRect();
-        var scaleX = rightJointsCanvas.width  / rightJointsCanvas.offsetWidth;
-        var scaleY = rightJointsCanvas.height / rightJointsCanvas.offsetHeight;
-        var cx = (e.clientX - rect.left) * scaleX;
-        var cy = (e.clientY - rect.top)  * scaleY;
-        var idx = Math.round((cx / rightJointsCanvas.width) * (bufFilled - 1));
+        var plot = getPlotRect(rect.width, rect.height);
+        var cx = e.clientX - rect.left;
+        var cy = e.clientY - rect.top;
+        var clampedX = Math.min(Math.max(cx, plot.left), plot.right);
+        var idx = Math.round(((clampedX - plot.left) / Math.max(plot.width, 1)) * (bufFilled - 1));
 
         var rminV = Infinity, rmaxV = -Infinity;
         for (var j = 0; j < 6; j++) {
@@ -524,13 +677,13 @@
         var rpad  = (rmaxV - rminV) * 0.12 || 0.1;
         rminV -= rpad; rmaxV += rpad;
         var rrange = rmaxV - rminV || 1;
-        var rjh    = rightJointsCanvas.height;
+        var rjh    = plot.height;
 
         var best = -1, bestDist = 22;
         for (var j = 0; j < 6; j++) {
             var rd = getOrdered(rightJointBufs[j]);
             if (!rd.length || idx < 0 || idx >= rd.length) continue;
-            var vy = rjh - ((rd[idx] - rminV) / rrange) * rjh * 0.88 - rjh * 0.06;
+            var vy = plot.bottom - ((rd[idx] - rminV) / rrange) * rjh;
             var dist = Math.abs(vy - cy);
             if (dist < bestDist) { bestDist = dist; best = j; }
         }

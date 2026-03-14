@@ -311,12 +311,9 @@
 
         const leftGripperValue = currentJointValues.fl_joint7 || 0;
         const rightGripperValue = currentJointValues.fr_joint7 || 0;
-        const stateColor = playbackState.isPaused ? '#ff8c69' : '#78d381';
-        const stateLabel = playbackState.isPaused ? 'PAUSED' : 'PLAYING';
 
         statusPanel.innerHTML = [
             '<div style="font-weight:bold;margin-bottom:6px;">' + model_name + '</div>',
-            '<div style="margin-bottom:6px;">State: <span style="color:' + stateColor + ';">' + stateLabel + '</span></div>',
             '<div style="color:#97a0b3;margin-bottom:4px;">Left Arm</div>',
             leftRows,
             '<div style="margin-top:6px;">Left Gripper: ' + leftGripperValue.toFixed(3) + '</div>',
