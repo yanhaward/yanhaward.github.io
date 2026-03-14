@@ -51,13 +51,23 @@ permalink: /replay_viewer/
 
       <!-- joint charts -->
       <div class="replayviewer-chart-section">
-        <div class="replayviewer-chart-label">Joint 1 ~ 6</div>
+        <div class="replayviewer-chart-label">Left Arm  Joint 1~6</div>
         <div class="replayviewer-chart-wrap">
-          <canvas id="replayviewerJointsCanvas" class="replayviewer-chart-canvas" height="130"></canvas>
+          <canvas id="replayviewerJointsCanvas" class="replayviewer-chart-canvas" height="110"></canvas>
           <div id="replayviewerChartTooltip" class="replayviewer-chart-tooltip"></div>
         </div>
-        <div class="replayviewer-chart-label">Gripper</div>
-        <canvas id="replayviewerGripperCanvas" class="replayviewer-chart-canvas" height="52"></canvas>
+        <div class="replayviewer-chart-label">Left Arm  Gripper</div>
+        <canvas id="replayviewerGripperCanvas" class="replayviewer-chart-canvas" height="44"></canvas>
+
+        <hr class="replayviewer-divider" style="margin: 0.25rem 0;" />
+
+        <div class="replayviewer-chart-label">Right Arm  Joint 1~6</div>
+        <div class="replayviewer-chart-wrap">
+          <canvas id="replayviewerRightJointsCanvas" class="replayviewer-chart-canvas" height="110"></canvas>
+          <div id="replayviewerRightChartTooltip" class="replayviewer-chart-tooltip"></div>
+        </div>
+        <div class="replayviewer-chart-label">Right Arm  Gripper</div>
+        <canvas id="replayviewerRightGripperCanvas" class="replayviewer-chart-canvas" height="44"></canvas>
       </div>
 
     </aside>
